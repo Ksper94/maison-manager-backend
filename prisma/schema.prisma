@@ -1,0 +1,143 @@
+datasource db {
+  provider = "postgresql" 
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+model Foyer {
+  id             String   @id @default(cuid())
+  name           String
+  code           String   @unique
+  rule           String
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  members        User[]
+  calendarEvents CalendarEvent[]
+  tasks          Task[]
+  shoppingItems  ShoppingItem[]
+  travelIdeas    TravelIdea[]
+
+  // Idées de recette
+  recipes Recipe[]
+}
+
+model User {
+  id         String   @id @default(cuid())
+  name       String
+  email      String   @unique
+  password   String
+  avatar     String?
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  foyerId    String?
+  foyer      Foyer?   @relation(fields: [foyerId], references: [id])
+
+  acceptedFoyerRuleAt DateTime?
+
+  createdEvents      CalendarEvent[] @relation("UserCreatorRelation")
+  assignedTasks      Task[] @relation("UserAssignedTasks")
+  createdTravelIdeas TravelIdea[] @relation("TravelCreatorRelation")
+
+  assignedShoppings ShoppingItem[] @relation("UserAssignedShopping")
+  addedShoppings    ShoppingItem[] @relation("UserAddedShopping")
+
+  points     Int      @default(0)
+
+  // Recettes créées
+  createdRecipes Recipe[] @relation("RecipeCreatorRelation")
+
+  // Champ pour les notifications push
+  pushToken String? // Token pour Expo Push Notifications
+}
+
+model Task {
+  id          String   @id @default(cuid())
+  title       String
+  description String?
+  completed   Boolean  @default(false)
+  points      Int      @default(0)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  foyerId String
+  foyer   Foyer @relation(fields: [foyerId], references: [id])
+
+  assignedToId String?
+  assignedTo   User? @relation(fields: [assignedToId], references: [id], name: "UserAssignedTasks")
+}
+
+model CalendarEvent {
+  id          String   @id @default(cuid())
+  title       String
+  description String?
+  startDate   DateTime
+  endDate     DateTime
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  foyerId String
+  foyer   Foyer   @relation(fields: [foyerId], references: [id])
+
+  creatorId String?
+  creator   User?   @relation(fields: [creatorId], references: [id], name: "UserCreatorRelation")
+}
+
+model ShoppingItem {
+  id         String   @id @default(cuid())
+  name       String
+  quantity   String?
+  purchased  Boolean  @default(false)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  foyerId  String
+  foyer    Foyer @relation(fields: [foyerId], references: [id])
+
+  assignedToId String?
+  assignedTo   User? @relation(fields: [assignedToId], references: [id], name: "UserAssignedShopping")
+
+  addedById String?
+  addedBy   User? @relation(fields: [addedById], references: [id], name: "UserAddedShopping")
+}
+
+model TravelIdea {
+  id          String   @id @default(cuid())
+  title       String
+  description String?
+  location    String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  votes       Int      @default(0)
+
+  foyerId  String
+  foyer    Foyer @relation(fields: [foyerId], references: [id])
+
+  creatorId String?
+  creator   User? @relation(fields: [creatorId], references: [id], name: "TravelCreatorRelation")
+}
+
+model Recipe {
+  id          String   @id @default(cuid())
+  title       String
+  description String?
+  ingredients String?  // JSON, text ou autre
+  instructions String? // étapes, etc.
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  // Système de vote basique
+  votes Int @default(0)
+
+  // Relation : un foyer
+  foyerId String
+  foyer   Foyer @relation(fields: [foyerId], references: [id])
+
+  // Relation : qui a créé la recette
+  creatorId String?
+  creator   User? @relation(fields: [creatorId], references: [id], name: "RecipeCreatorRelation")
+}

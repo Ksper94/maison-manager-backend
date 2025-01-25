@@ -1,0 +1,29 @@
+services:
+  db:
+    image: postgres:14-alpine
+    container_name: maison_manager_db
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: secret
+      POSTGRES_DB: maison_manager_db
+    ports:
+      - "5432:5432"
+    volumes:
+      - db-data:/var/lib/postgresql/data
+
+  app:
+    build: .
+    container_name: maison_manager_app
+    ports:
+      - "4000:4000"
+    depends_on:
+      - db
+    environment:
+      DATABASE_URL: "postgresql://postgres:secret@db:5432/maison_manager_db?schema=public"
+      JWT_SECRET: "UneSuperCleSecrete"
+      PORT: "4000"
+    # PAS de volumes
+    command: npm run start  # Va exécuter "node dist/server.js" grâce à ton package.json
+
+volumes:
+  db-data:
