@@ -11,10 +11,18 @@ interface CreateShoppingItemInput {
 export async function createShoppingItem(data: CreateShoppingItemInput) {
   const { name, quantity, foyerId, assignedToId, addedById } = data;
 
+  if (!name.trim()) {
+    throw new Error('Le nom de l’article est obligatoire.');
+  }
+
+  if (quantity && (isNaN(Number(quantity)) || Number(quantity) <= 0)) {
+    throw new Error('La quantité doit être un nombre valide supérieur à 0.');
+  }
+
   return prisma.shoppingItem.create({
     data: {
-      name,
-      quantity,
+      name: name.trim(),
+      quantity: quantity?.trim(),
       foyerId,
       assignedToId,
       addedById,
@@ -59,11 +67,15 @@ interface UpdateShoppingItemInput {
 export async function updateShoppingItem(data: UpdateShoppingItemInput) {
   const { itemId, name, quantity, purchased, assignedToId } = data;
 
+  if (quantity && (isNaN(Number(quantity)) || Number(quantity) <= 0)) {
+    throw new Error('La quantité doit être un nombre valide supérieur à 0.');
+  }
+
   return prisma.shoppingItem.update({
     where: { id: itemId },
     data: {
-      name,
-      quantity,
+      name: name?.trim(),
+      quantity: quantity?.trim(),
       purchased,
       assignedToId,
     },
