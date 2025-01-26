@@ -3,11 +3,23 @@ import { createFoyer, joinFoyer } from '../services/foyerService';
 import { sendPushNotification } from '../utils/notifications';
 import { prisma } from '../config/db'; // Import de Prisma
 
+interface CustomRequest extends Request {
+  userId?: string; // Ajout du champ userId pour typer correctement les requêtes
+}
+
 // POST /api/foyer/create
-export async function createFoyerController(req: Request, res: Response, next: NextFunction) {
+export async function createFoyerController(
+  req: CustomRequest,
+  res: Response,
+  next: NextFunction
+) {
   try {
-    const userId = (req as any).userId;
+    const userId = req.userId;
     const { name, rule } = req.body;
+
+    if (!userId) {
+      return res.status(401).json({ message: 'Authentification requise' });
+    }
 
     if (!name || !rule) {
       return res.status(400).json({ message: 'Champs name et rule obligatoires' });
@@ -38,16 +50,28 @@ export async function createFoyerController(req: Request, res: Response, next: N
         },
       },
     });
-  } catch (error) {
-    next(error);
+  } catch (error: unknown) {
+    if (error instanceof Error) {
+      console.error('[createFoyerController] Erreur :', error.message);
+      return res.status(500).json({ message: 'Erreur interne', error: error.message });
+    }
+    next(error); // Passe l'erreur brute au middleware suivant
   }
 }
 
 // POST /api/foyer/join
-export async function joinFoyerController(req: Request, res: Response, next: NextFunction) {
+export async function joinFoyerController(
+  req: CustomRequest,
+  res: Response,
+  next: NextFunction
+) {
   try {
-    const userId = (req as any).userId;
+    const userId = req.userId;
     const { code } = req.body;
+
+    if (!userId) {
+      return res.status(401).json({ message: 'Authentification requise' });
+    }
 
     if (!code) {
       return res.status(400).json({ message: 'Code d’invitation requis' });
@@ -62,9 +86,8 @@ export async function joinFoyerController(req: Request, res: Response, next: Nex
       select: { pushToken: true },
     });
 
-    // Correction du typage
     const pushTokens = foyerMembers
-      .map((member: { pushToken: string | null }) => member.pushToken)
+      .map((member) => member.pushToken)
       .filter((token): token is string => Boolean(token)); // Filtre les tokens valides
 
     for (const token of pushTokens) {
@@ -88,7 +111,11 @@ export async function joinFoyerController(req: Request, res: Response, next: Nex
         },
       },
     });
-  } catch (error: any) {
-    return res.status(404).json({ message: error.message });
+  } catch (error: unknown) {
+    if (error instanceof Error) {
+      console.error('[joinFoyerController] Erreur :', error.message);
+      return res.status(500).json({ message: 'Erreur interne', error: error.message });
+    }
+    next(error); // Passe l'erreur brute au middleware suivant
   }
 }
