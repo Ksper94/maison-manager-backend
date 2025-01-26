@@ -5,11 +5,7 @@ interface CustomRequest extends Request {
   userId?: string;
 }
 
-export const authMiddleware = (
-  req: CustomRequest,
-  res: Response,
-  next: NextFunction
-) => {
+export const authMiddleware = (req: CustomRequest, res: Response, next: NextFunction) => {
   try {
     const authHeader = req.headers.authorization;
 
@@ -22,14 +18,13 @@ export const authMiddleware = (
       return res.status(401).json({ message: 'Token invalide' });
     }
 
-    // Vérification du token
     const decoded = verifyToken(token);
 
     if (!decoded || !decoded.userId) {
       return res.status(401).json({ message: 'Token invalide ou expiré' });
     }
 
-    req.userId = decoded.userId; // Injecter l'ID utilisateur dans la requête
+    req.userId = decoded.userId;
     next();
   } catch (error) {
     console.error('[authMiddleware] Erreur de token :', error);

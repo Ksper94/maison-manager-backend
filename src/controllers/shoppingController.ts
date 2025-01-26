@@ -9,20 +9,37 @@ import {
 import { prisma } from '../config/db';
 import { sendPushNotification } from '../utils/notifications';
 
+interface CustomRequest extends Request {
+  userId?: string; // Typage étendu pour inclure userId injecté par le middleware
+}
+
 /**
  * Création d'un article dans la liste de courses
  */
-export async function createShoppingItemController(req: Request, res: Response, next: NextFunction) {
+export async function createShoppingItemController(req: CustomRequest, res: Response, next: NextFunction) {
   try {
-    const userId = (req as any).userId;
+    const userId = req.userId;
+
+    if (!userId) {
+      return res.status(401).json({ message: 'Authentification requise.' });
+    }
 
     // Vérification de l'appartenance à un foyer
-    const user = await prisma.user.findUnique({ where: { id: userId }, select: { foyerId: true, name: true } });
+    const user = await prisma.user.findUnique({
+      where: { id: userId },
+      select: { foyerId: true, name: true },
+    });
+
     if (!user || !user.foyerId) {
       return res.status(403).json({ message: 'Vous devez appartenir à un foyer pour ajouter un article.' });
     }
 
     const { name, quantity, assignedToId } = req.body;
+
+    // Validation des champs
+    if (!name) {
+      return res.status(400).json({ message: "Le champ 'name' est obligatoire." });
+    }
 
     // Création de l'article
     const item = await createShoppingItem({
@@ -47,11 +64,9 @@ export async function createShoppingItemController(req: Request, res: Response, 
       await sendPushNotification(token, `${user.name} a ajouté "${name}" à la liste de courses.`);
     }
 
-    return res.status(201).json({
-      message: 'Article ajouté à la liste de courses.',
-      item,
-    });
-  } catch (error: any) {
+    return res.status(201).json({ message: 'Article ajouté avec succès.', item });
+  } catch (error) {
+    console.error('[createShoppingItemController] Erreur :', error);
     next(error);
   }
 }
@@ -59,25 +74,31 @@ export async function createShoppingItemController(req: Request, res: Response, 
 /**
  * Récupération de tous les articles de la liste de courses
  */
-export async function getShoppingItemsController(req: Request, res: Response, next: NextFunction) {
+export async function getShoppingItemsController(req: CustomRequest, res: Response, next: NextFunction) {
   try {
-    const userId = (req as any).userId;
+    const userId = req.userId;
+
+    if (!userId) {
+      return res.status(401).json({ message: 'Authentification requise.' });
+    }
 
     // Vérification de l'appartenance à un foyer
-    const user = await prisma.user.findUnique({ where: { id: userId }, select: { foyerId: true } });
+    const user = await prisma.user.findUnique({
+      where: { id: userId },
+      select: { foyerId: true },
+    });
+
     if (!user || !user.foyerId) {
-      return res.status(403).json({ message: 'Accès refusé : pas de foyer.' });
+      return res.status(403).json({ message: 'Accès refusé : vous n’appartenez à aucun foyer.' });
     }
 
     // Filtre pour les articles achetés ou non
-    const purchasedQuery = req.query.purchased as string | undefined;
-    let purchased: boolean | undefined;
-    if (purchasedQuery === 'true') purchased = true;
-    if (purchasedQuery === 'false') purchased = false;
+    const purchased = req.query.purchased === 'true' ? true : req.query.purchased === 'false' ? false : undefined;
 
     const items = await getAllShoppingItems(user.foyerId, purchased);
     return res.status(200).json(items);
   } catch (error) {
+    console.error('[getShoppingItemsController] Erreur :', error);
     next(error);
   }
 }
@@ -88,12 +109,15 @@ export async function getShoppingItemsController(req: Request, res: Response, ne
 export async function getShoppingItemByIdController(req: Request, res: Response, next: NextFunction) {
   try {
     const itemId = req.params.itemId;
+
     const item = await getShoppingItemById(itemId);
     if (!item) {
       return res.status(404).json({ message: 'Article introuvable.' });
     }
+
     return res.status(200).json(item);
   } catch (error) {
+    console.error('[getShoppingItemByIdController] Erreur :', error);
     next(error);
   }
 }
@@ -106,8 +130,7 @@ export async function updateShoppingItemController(req: Request, res: Response, 
     const itemId = req.params.itemId;
     const { name, quantity, purchased, assignedToId } = req.body;
 
-    // Mise à jour de l'article
-    const updated = await updateShoppingItem({
+    const updatedItem = await updateShoppingItem({
       itemId,
       name,
       quantity,
@@ -115,11 +138,9 @@ export async function updateShoppingItemController(req: Request, res: Response, 
       assignedToId,
     });
 
-    return res.status(200).json({
-      message: 'Article mis à jour.',
-      item: updated,
-    });
+    return res.status(200).json({ message: 'Article mis à jour avec succès.', item: updatedItem });
   } catch (error) {
+    console.error('[updateShoppingItemController] Erreur :', error);
     next(error);
   }
 }
@@ -131,34 +152,14 @@ export async function deleteShoppingItemController(req: Request, res: Response, 
   try {
     const itemId = req.params.itemId;
 
-    // Recherche de l'article avant suppression
-    const item = await prisma.shoppingItem.findUnique({ where: { id: itemId }, select: { name: true, foyerId: true } });
-    if (!item) {
+    const deletedItem = await deleteShoppingItem(itemId);
+    if (!deletedItem) {
       return res.status(404).json({ message: 'Article introuvable ou déjà supprimé.' });
     }
 
-    // Suppression de l'article
-    const deleted = await deleteShoppingItem(itemId);
-
-    // Envoi de notifications aux membres du foyer
-    const members = await prisma.user.findMany({
-      where: { foyerId: item.foyerId },
-      select: { pushToken: true },
-    });
-
-    const pushTokens = members
-      .map((member) => member.pushToken)
-      .filter((token): token is string => Boolean(token));
-
-    for (const token of pushTokens) {
-      await sendPushNotification(token, `L'article "${item.name}" a été supprimé de la liste de courses.`);
-    }
-
-    return res.status(200).json({
-      message: 'Article supprimé de la liste.',
-      item: deleted,
-    });
-  } catch (error: any) {
+    return res.status(200).json({ message: 'Article supprimé avec succès.', item: deletedItem });
+  } catch (error) {
+    console.error('[deleteShoppingItemController] Erreur :', error);
     next(error);
   }
 }

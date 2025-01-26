@@ -9,19 +9,25 @@ import {
 import { prisma } from '../config/db';
 import { sendPushNotification } from '../utils/notifications';
 
+interface CustomRequest extends Request {
+  userId?: string;
+}
+
 /**
- * Création d'une nouvelle tâche
+ * Contrôleur pour créer une nouvelle tâche
  */
-export async function createTaskController(req: Request, res: Response, next: NextFunction) {
+export async function createTaskController(req: CustomRequest, res: Response, next: NextFunction) {
   try {
-    const userId = (req as any).userId;
+    const userId = req.userId;
 
     const user = await prisma.user.findUnique({
       where: { id: userId },
       select: { foyerId: true, name: true },
     });
     if (!user || !user.foyerId) {
-      return res.status(403).json({ message: 'Vous devez appartenir à un foyer pour créer une tâche.' });
+      return res
+        .status(403)
+        .json({ message: 'Vous devez appartenir à un foyer pour créer une tâche.' });
     }
 
     const { title, description, assignedToId, points } = req.body;
@@ -34,6 +40,7 @@ export async function createTaskController(req: Request, res: Response, next: Ne
       points,
     });
 
+    // Notification aux membres du foyer
     const members = await prisma.user.findMany({
       where: { foyerId: user.foyerId },
       select: { pushToken: true },
@@ -47,41 +54,40 @@ export async function createTaskController(req: Request, res: Response, next: Ne
       await sendPushNotification(token, `${user.name} a créé une nouvelle tâche : "${title}".`);
     }
 
-    return res.status(201).json({
-      message: 'Tâche créée avec succès',
-      task,
-    });
-  } catch (error: any) {
+    return res.status(201).json({ message: 'Tâche créée avec succès', task });
+  } catch (error) {
+    console.error('[createTaskController] Erreur :', error);
     next(error);
   }
 }
 
 /**
- * Récupération de toutes les tâches
+ * Contrôleur pour récupérer les tâches du foyer
  */
-export async function getTasksController(req: Request, res: Response, next: NextFunction) {
+export async function getTasksController(req: CustomRequest, res: Response, next: NextFunction) {
   try {
-    const userId = (req as any).userId;
+    const userId = req.userId;
 
-    const user = await prisma.user.findUnique({ where: { id: userId }, select: { foyerId: true } });
+    const user = await prisma.user.findUnique({
+      where: { id: userId },
+      select: { foyerId: true },
+    });
     if (!user || !user.foyerId) {
-      return res.status(403).json({ message: 'Accès refusé : pas de foyer.' });
+      return res.status(403).json({ message: 'Accès refusé : vous n’appartenez à aucun foyer.' });
     }
 
-    const completedQuery = req.query.completed as string | undefined;
-    let completed: boolean | undefined = undefined;
-    if (completedQuery === 'true') completed = true;
-    if (completedQuery === 'false') completed = false;
+    const completed = req.query.completed === 'true' ? true : req.query.completed === 'false' ? false : undefined;
 
     const tasks = await getTasksByFoyer(user.foyerId, completed);
     return res.status(200).json(tasks);
   } catch (error) {
+    console.error('[getTasksController] Erreur :', error);
     next(error);
   }
 }
 
 /**
- * Récupération d'une tâche par ID
+ * Contrôleur pour récupérer une tâche par ID
  */
 export async function getTaskByIdController(req: Request, res: Response, next: NextFunction) {
   try {
@@ -93,20 +99,21 @@ export async function getTaskByIdController(req: Request, res: Response, next: N
     }
 
     return res.status(200).json(task);
-  } catch (error: any) {
+  } catch (error) {
+    console.error('[getTaskByIdController] Erreur :', error);
     next(error);
   }
 }
 
 /**
- * Mise à jour d'une tâche
+ * Contrôleur pour mettre à jour une tâche
  */
 export async function updateTaskController(req: Request, res: Response, next: NextFunction) {
   try {
     const taskId = req.params.taskId;
     const { title, description, completed, points, assignedToId } = req.body;
 
-    const updated = await updateTask({
+    const updatedTask = await updateTask({
       taskId,
       title,
       description,
@@ -137,28 +144,29 @@ export async function updateTaskController(req: Request, res: Response, next: Ne
       }
     }
 
-    return res.status(200).json({
-      message: 'Tâche mise à jour.',
-      task: updated,
-    });
-  } catch (error: any) {
+    return res.status(200).json({ message: 'Tâche mise à jour.', task: updatedTask });
+  } catch (error) {
+    console.error('[updateTaskController] Erreur :', error);
     next(error);
   }
 }
 
 /**
- * Suppression d'une tâche
+ * Contrôleur pour supprimer une tâche
  */
 export async function deleteTaskController(req: Request, res: Response, next: NextFunction) {
   try {
     const taskId = req.params.taskId;
 
-    const task = await prisma.task.findUnique({ where: { id: taskId }, select: { title: true, foyerId: true } });
+    const task = await prisma.task.findUnique({
+      where: { id: taskId },
+      select: { title: true, foyerId: true },
+    });
     if (!task) {
       return res.status(404).json({ message: 'Tâche introuvable ou déjà supprimée.' });
     }
 
-    const deleted = await deleteTask(taskId);
+    const deletedTask = await deleteTask(taskId);
 
     const members = await prisma.user.findMany({
       where: { foyerId: task.foyerId },
@@ -173,11 +181,9 @@ export async function deleteTaskController(req: Request, res: Response, next: Ne
       await sendPushNotification(token, `La tâche "${task.title}" a été supprimée.`);
     }
 
-    return res.status(200).json({
-      message: 'Tâche supprimée.',
-      task: deleted,
-    });
-  } catch (error: any) {
+    return res.status(200).json({ message: 'Tâche supprimée.', task: deletedTask });
+  } catch (error) {
+    console.error('[deleteTaskController] Erreur :', error);
     next(error);
   }
 }
