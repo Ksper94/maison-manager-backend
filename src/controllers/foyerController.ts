@@ -22,13 +22,11 @@ export async function createFoyerController(
     }
 
     if (!name || !rule) {
-      return res.status(400).json({ message: 'Champs name et rule obligatoires' });
+      return res.status(400).json({ message: 'Les champs "name" et "rule" sont obligatoires.' });
     }
 
-    // Création du foyer
     const updatedUser = await createFoyer(userId, name, rule);
 
-    // Envoi de notification push au créateur (optionnel)
     if (updatedUser.pushToken) {
       await sendPushNotification(
         updatedUser.pushToken,
@@ -55,7 +53,7 @@ export async function createFoyerController(
       console.error('[createFoyerController] Erreur :', error.message);
       return res.status(500).json({ message: 'Erreur interne', error: error.message });
     }
-    next(error); // Passe l'erreur brute au middleware suivant
+    next(error);
   }
 }
 
@@ -74,13 +72,11 @@ export async function joinFoyerController(
     }
 
     if (!code) {
-      return res.status(400).json({ message: 'Code d’invitation requis' });
+      return res.status(400).json({ message: 'Le code d’invitation est requis.' });
     }
 
-    // Rejoindre un foyer
     const updatedUser = await joinFoyer(userId, code);
 
-    // Notification aux membres du foyer existant
     const foyerMembers = await prisma.user.findMany({
       where: { foyerId: updatedUser.foyer?.id },
       select: { pushToken: true },
@@ -88,7 +84,7 @@ export async function joinFoyerController(
 
     const pushTokens = foyerMembers
       .map((member) => member.pushToken)
-      .filter((token): token is string => Boolean(token)); // Filtre les tokens valides
+      .filter((token): token is string => Boolean(token));
 
     for (const token of pushTokens) {
       await sendPushNotification(
@@ -116,6 +112,6 @@ export async function joinFoyerController(
       console.error('[joinFoyerController] Erreur :', error.message);
       return res.status(500).json({ message: 'Erreur interne', error: error.message });
     }
-    next(error); // Passe l'erreur brute au middleware suivant
+    next(error);
   }
 }
