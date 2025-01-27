@@ -18,6 +18,9 @@ async function verifyUserFoyer(userId: string): Promise<string | null> {
   return user?.foyerId || null;
 }
 
+/**
+ * Crée un nouvel événement.
+ */
 export async function createEventController(req: CustomRequest, res: Response, next: NextFunction) {
   try {
     const userId = req.userId;
@@ -69,6 +72,9 @@ export async function createEventController(req: CustomRequest, res: Response, n
   }
 }
 
+/**
+ * Récupère les événements.
+ */
 export async function getEventsController(req: CustomRequest, res: Response, next: NextFunction) {
   try {
     const userId = req.userId;
@@ -89,6 +95,64 @@ export async function getEventsController(req: CustomRequest, res: Response, nex
     return res.status(200).json(events);
   } catch (error) {
     console.error('[getEventsController] Erreur :', error);
+    next(error);
+  }
+}
+
+/**
+ * Récupère un événement par ID.
+ */
+export async function getEventByIdController(req: CustomRequest, res: Response, next: NextFunction) {
+  try {
+    const eventId = req.params.eventId;
+    const event = await getCalendarEventById(eventId);
+
+    if (!event) {
+      return res.status(404).json({ message: 'Événement introuvable.' });
+    }
+
+    return res.status(200).json(event);
+  } catch (error) {
+    console.error('[getEventByIdController] Erreur :', error);
+    next(error);
+  }
+}
+
+/**
+ * Met à jour un événement.
+ */
+export async function updateEventController(req: Request, res: Response, next: NextFunction) {
+  try {
+    const eventId = req.params.eventId;
+    const { title, description, startDate, endDate, recurrence } = req.body;
+
+    const updatedEvent = await updateCalendarEvent({
+      eventId,
+      title,
+      description,
+      startDate: startDate ? new Date(startDate) : undefined,
+      endDate: endDate ? new Date(endDate) : undefined,
+      recurrence,
+    });
+
+    return res.status(200).json({ message: 'Événement mis à jour avec succès.', event: updatedEvent });
+  } catch (error) {
+    console.error('[updateEventController] Erreur :', error);
+    next(error);
+  }
+}
+
+/**
+ * Supprime un événement.
+ */
+export async function deleteEventController(req: Request, res: Response, next: NextFunction) {
+  try {
+    const eventId = req.params.eventId;
+
+    const deletedEvent = await deleteCalendarEvent(eventId);
+    return res.status(200).json({ message: 'Événement supprimé avec succès.', event: deletedEvent });
+  } catch (error) {
+    console.error('[deleteEventController] Erreur :', error);
     next(error);
   }
 }

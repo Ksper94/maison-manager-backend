@@ -26,7 +26,7 @@ export async function createCalendarEvent(data: CreateEventInput) {
     throw new Error('La date de fin doit être postérieure à la date de début.');
   }
 
-  const newEvent = await prisma.calendarEvent.create({
+  return prisma.calendarEvent.create({
     data: {
       title,
       description,
@@ -37,8 +37,6 @@ export async function createCalendarEvent(data: CreateEventInput) {
       creatorId,
     },
   });
-
-  return newEvent;
 }
 
 export async function getCalendarEvents(foyerId: string, from?: Date, to?: Date) {
@@ -60,9 +58,7 @@ export async function getCalendarEvents(foyerId: string, from?: Date, to?: Date)
 
   return events.map((event) => {
     if (event.recurrence === 'none') return event;
-
-    const recurringEvents = generateRecurringEvents(event, from, to);
-    return recurringEvents;
+    return generateRecurringEvents(event, from, to);
   }).flat();
 }
 
@@ -105,11 +101,11 @@ function generateRecurringEvents(event: any, from?: Date, to?: Date) {
   let currentDate = new Date(event.startDate);
 
   while (!to || currentDate <= to) {
-    if (from && currentDate >= from) {
+    if (!from || currentDate >= from) {
       recurringEvents.push({
         ...event,
         startDate: new Date(currentDate),
-        endDate: new Date(currentDate.getTime() + (event.endDate - event.startDate)),
+        endDate: new Date(currentDate.getTime() + (new Date(event.endDate).getTime() - new Date(event.startDate).getTime())),
       });
     }
 
