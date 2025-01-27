@@ -70,14 +70,15 @@ model CalendarEvent {
   description String?
   startDate   DateTime
   endDate     DateTime
+  recurrence  String   @default("none") // Valeurs possibles : "none", "daily", "weekly", "monthly", "yearly"
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
-  foyerId String
-  foyer   Foyer   @relation(fields: [foyerId], references: [id])
+  foyerId     String
+  foyer       Foyer    @relation(fields: [foyerId], references: [id])
 
-  creatorId String?
-  creator   User?   @relation(fields: [creatorId], references: [id], name: "UserCreatorRelation")
+  creatorId   String?
+  creator     User?    @relation("UserCreatorRelation", fields: [creatorId], references: [id])
 }
 
 model ShoppingItem {
