@@ -22,8 +22,11 @@ interface UpdateEventInput {
 export async function createCalendarEvent(data: CreateEventInput) {
   const { title, description, startDate, endDate, recurrence, foyerId, creatorId } = data;
 
-  if (startDate >= endDate) {
+  // Pour les événements qui ne sont pas des rendez-vous, on permet que startDate et endDate soient égaux
+  if (recurrence !== 'none' && startDate > endDate) {
     throw new Error('La date de fin doit être postérieure à la date de début.');
+  } else if (recurrence === 'none' && startDate >= endDate) {
+    throw new Error('La date de fin doit être postérieure ou égale à la date de début pour les événements non récurrents.');
   }
 
   return prisma.calendarEvent.create({
