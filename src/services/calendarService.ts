@@ -23,20 +23,14 @@ export async function createCalendarEvent(data: CreateEventInput) {
   const { title, description, startDate, endDate, recurrence, foyerId, creatorId } = data;
 
   // Logique spécifique pour chaque type de planning
-  if (recurrence === 'monthly') {
-    // Pour le planning de travail, endDate est à la fin du mois
-    const monthEnd = new Date(startDate.getFullYear(), startDate.getMonth() + 1, 0);
-    data.endDate = monthEnd;
-  } else if (recurrence === 'weekly') {
-    // Pour le planning école, endDate est une semaine après startDate
-    const weekEnd = new Date(startDate);
-    weekEnd.setDate(weekEnd.getDate() + 6);
-    data.endDate = weekEnd;
+  if (recurrence === 'monthly' || recurrence === 'weekly') {
+    // Pour les plannings de travail et d'école, on suppose que le frontend envoie déjà les bonnes dates de début et de fin pour chaque événement individuel
+    // Donc, pas besoin de les recalculer ici. Assurez-vous que le frontend envoie les événements avec les bonnes plages horaires.
   }
 
   // Validation des dates
   if (recurrence !== 'none' && startDate > endDate) {
-    throw new Error('La date de fin doit être postérieure à la date de début.');
+    throw new Error('La date de fin doit être postérieure à la date de début pour les événements récurrents.');
   } else if (recurrence === 'none' && startDate >= endDate) {
     throw new Error('La date de fin doit être postérieure ou égale à la date de début pour les événements non récurrents.');
   }
