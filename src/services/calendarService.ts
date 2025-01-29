@@ -22,7 +22,19 @@ interface UpdateEventInput {
 export async function createCalendarEvent(data: CreateEventInput) {
   const { title, description, startDate, endDate, recurrence, foyerId, creatorId } = data;
 
-  // Pour les événements qui ne sont pas des rendez-vous, on permet que startDate et endDate soient égaux
+  // Logique spécifique pour chaque type de planning
+  if (recurrence === 'monthly') {
+    // Pour le planning de travail, endDate est à la fin du mois
+    const monthEnd = new Date(startDate.getFullYear(), startDate.getMonth() + 1, 0);
+    data.endDate = monthEnd;
+  } else if (recurrence === 'weekly') {
+    // Pour le planning école, endDate est une semaine après startDate
+    const weekEnd = new Date(startDate);
+    weekEnd.setDate(weekEnd.getDate() + 6);
+    data.endDate = weekEnd;
+  }
+
+  // Validation des dates
   if (recurrence !== 'none' && startDate > endDate) {
     throw new Error('La date de fin doit être postérieure à la date de début.');
   } else if (recurrence === 'none' && startDate >= endDate) {
@@ -41,15 +53,24 @@ export async function createCalendarEvent(data: CreateEventInput) {
     },
   });
 }
-
 export async function getCalendarEvents(foyerId: string, from?: Date, to?: Date) {
   const whereClause: any = { foyerId };
 
   if (from && to) {
-    whereClause.OR = [
+    whereClause.AND = [
       {
-        startDate: { lte: to },
-        endDate: { gte: from },
+        OR: [
+          {
+            startDate: { gte: from, lte: to },
+          },
+          {
+            endDate: { gte: from, lte: to },
+          },
+          {
+            startDate: { lte: from },
+            endDate: { gte: to },
+          },
+        ],
       },
     ];
   }
@@ -64,7 +85,6 @@ export async function getCalendarEvents(foyerId: string, from?: Date, to?: Date)
     return generateRecurringEvents(event, from, to);
   }).flat();
 }
-
 export async function getCalendarEventById(eventId: string) {
   return prisma.calendarEvent.findUnique({
     where: { id: eventId },
