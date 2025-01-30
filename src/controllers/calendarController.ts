@@ -9,19 +9,33 @@ import {
 import { prisma } from '../config/db';
 import { sendPushNotification } from '../utils/notifications';
 
+/**
+ * Interface pour ajouter userId au Request
+ */
 interface CustomRequest extends Request {
   userId?: string;
 }
 
+/**
+ * Vérifie si le user est associé à un foyer (many-to-many)
+ * et renvoie le *premier* foyerId trouvé.
+ * Si le user n'est dans aucun foyer, renvoie null.
+ */
 async function verifyUserFoyer(userId: string): Promise<string | null> {
-  const user = await prisma.user.findUnique({ where: { id: userId } });
-  return user?.foyerId || null;
+  const userFoyerRecord = await prisma.userFoyer.findFirst({
+    where: { userId },
+  });
+  return userFoyerRecord?.foyerId || null;
 }
 
 /**
- * Crée un nouvel événement.
+ * Crée un nouvel événement dans le foyer du user (le premier foyer trouvé).
  */
-export async function createEventController(req: CustomRequest, res: Response, next: NextFunction) {
+export async function createEventController(
+  req: CustomRequest,
+  res: Response,
+  next: NextFunction
+) {
   try {
     const userId = req.userId;
 
@@ -29,19 +43,24 @@ export async function createEventController(req: CustomRequest, res: Response, n
       return res.status(401).json({ message: 'Authentification requise.' });
     }
 
+    // On récupère le foyerId via la pivot table UserFoyer
     const foyerId = await verifyUserFoyer(userId);
     if (!foyerId) {
-      return res.status(403).json({ message: 'Vous devez appartenir à un foyer pour créer un événement.' });
+      return res.status(403).json({
+        message: 'Vous devez appartenir à un foyer pour créer un événement.',
+      });
     }
 
     const { title, description, startDate, endDate, recurrence } = req.body;
 
     if (!title || !startDate || !endDate || !recurrence) {
       return res.status(400).json({
-        message: 'Les champs title, startDate, endDate et recurrence sont obligatoires.',
+        message:
+          'Les champs title, startDate, endDate et recurrence sont obligatoires.',
       });
     }
 
+    // Création de l'événement via ton service
     const event = await createCalendarEvent({
       title,
       description,
@@ -52,15 +71,25 @@ export async function createEventController(req: CustomRequest, res: Response, n
       creatorId: userId,
     });
 
-    const members = await prisma.user.findMany({
+    // Récupération de tous les userFoyer liés à ce foyer
+    // pour obtenir les tokens des membres
+    const userFoyerRecords = await prisma.userFoyer.findMany({
       where: { foyerId },
-      select: { pushToken: true },
+      include: {
+        user: {
+          select: {
+            pushToken: true,
+          },
+        },
+      },
     });
 
-    const pushTokens = members
-      .map((member) => member.pushToken)
-      .filter((token): token is string => !!token);
+    // Extraction des pushTokens
+    const pushTokens = userFoyerRecords
+      .map((uf) => uf.user?.pushToken)
+      .filter((token): token is string => Boolean(token));
 
+    // Envoi des notifications
     for (const token of pushTokens) {
       await sendPushNotification(token, `Nouvel événement créé : ${title}`);
     }
@@ -73,9 +102,13 @@ export async function createEventController(req: CustomRequest, res: Response, n
 }
 
 /**
- * Récupère les événements.
+ * Récupère tous les événements du foyer du user (le premier foyer trouvé).
  */
-export async function getEventsController(req: CustomRequest, res: Response, next: NextFunction) {
+export async function getEventsController(
+  req: CustomRequest,
+  res: Response,
+  next: NextFunction
+) {
   try {
     const userId = req.userId;
 
@@ -85,12 +118,15 @@ export async function getEventsController(req: CustomRequest, res: Response, nex
 
     const foyerId = await verifyUserFoyer(userId);
     if (!foyerId) {
-      return res.status(403).json({ message: 'Vous devez appartenir à un foyer pour voir les événements.' });
+      return res.status(403).json({
+        message: 'Vous devez appartenir à un foyer pour voir les événements.',
+      });
     }
 
     const from = req.query.from ? new Date(String(req.query.from)) : undefined;
     const to = req.query.to ? new Date(String(req.query.to)) : undefined;
 
+    // Récupération des events via ton service
     const events = await getCalendarEvents(foyerId, from, to);
     return res.status(200).json(events);
   } catch (error) {
@@ -100,9 +136,13 @@ export async function getEventsController(req: CustomRequest, res: Response, nex
 }
 
 /**
- * Récupère un événement par ID.
+ * Récupère un événement par son ID (pas besoin de foyerId ici).
  */
-export async function getEventByIdController(req: CustomRequest, res: Response, next: NextFunction) {
+export async function getEventByIdController(
+  req: CustomRequest,
+  res: Response,
+  next: NextFunction
+) {
   try {
     const eventId = req.params.eventId;
     const event = await getCalendarEventById(eventId);
@@ -121,7 +161,11 @@ export async function getEventByIdController(req: CustomRequest, res: Response, 
 /**
  * Met à jour un événement.
  */
-export async function updateEventController(req: Request, res: Response, next: NextFunction) {
+export async function updateEventController(
+  req: Request,
+  res: Response,
+  next: NextFunction
+) {
   try {
     const eventId = req.params.eventId;
     const { title, description, startDate, endDate, recurrence } = req.body;
@@ -135,7 +179,9 @@ export async function updateEventController(req: Request, res: Response, next: N
       recurrence,
     });
 
-    return res.status(200).json({ message: 'Événement mis à jour avec succès.', event: updatedEvent });
+    return res
+      .status(200)
+      .json({ message: 'Événement mis à jour avec succès.', event: updatedEvent });
   } catch (error) {
     console.error('[updateEventController] Erreur :', error);
     next(error);
@@ -145,12 +191,18 @@ export async function updateEventController(req: Request, res: Response, next: N
 /**
  * Supprime un événement.
  */
-export async function deleteEventController(req: Request, res: Response, next: NextFunction) {
+export async function deleteEventController(
+  req: Request,
+  res: Response,
+  next: NextFunction
+) {
   try {
     const eventId = req.params.eventId;
 
     const deletedEvent = await deleteCalendarEvent(eventId);
-    return res.status(200).json({ message: 'Événement supprimé avec succès.', event: deletedEvent });
+    return res
+      .status(200)
+      .json({ message: 'Événement supprimé avec succès.', event: deletedEvent });
   } catch (error) {
     console.error('[deleteEventController] Erreur :', error);
     next(error);

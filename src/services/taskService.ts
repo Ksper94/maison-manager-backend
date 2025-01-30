@@ -8,6 +8,9 @@ interface CreateTaskInput {
   points?: number;
 }
 
+/**
+ * Créer une nouvelle tâche dans un foyer.
+ */
 export async function createTask(data: CreateTaskInput) {
   const { title, description, foyerId, assignedToId, points } = data;
 
@@ -26,6 +29,10 @@ export async function createTask(data: CreateTaskInput) {
   });
 }
 
+/**
+ * Récupérer les tâches d’un foyer,
+ * éventuellement filtrées par "completed".
+ */
 export async function getTasksByFoyer(foyerId: string, completed?: boolean) {
   const whereClause: any = { foyerId };
   if (typeof completed === 'boolean') {
@@ -35,14 +42,26 @@ export async function getTasksByFoyer(foyerId: string, completed?: boolean) {
   return prisma.task.findMany({
     where: whereClause,
     orderBy: { createdAt: 'desc' },
-    include: { assignedTo: { select: { id: true, name: true, email: true } } },
+    include: {
+      assignedTo: {
+        select: { id: true, name: true, email: true },
+      },
+    },
   });
 }
 
+/**
+ * Récupérer une tâche par son ID,
+ * en incluant la personne à qui elle est assignée.
+ */
 export async function getTaskById(taskId: string) {
   return prisma.task.findUnique({
     where: { id: taskId },
-    include: { assignedTo: { select: { id: true, name: true, email: true } } },
+    include: {
+      assignedTo: {
+        select: { id: true, name: true, email: true },
+      },
+    },
   });
 }
 
@@ -55,6 +74,9 @@ interface UpdateTaskInput {
   assignedToId?: string;
 }
 
+/**
+ * Mettre à jour une tâche existante.
+ */
 export async function updateTask(data: UpdateTaskInput) {
   const { taskId, title, description, completed, points, assignedToId } = data;
 
@@ -65,11 +87,22 @@ export async function updateTask(data: UpdateTaskInput) {
 
   return prisma.task.update({
     where: { id: taskId },
-    data: { title, description, completed, points, assignedToId },
-    include: { assignedTo: true },
+    data: {
+      title,
+      description,
+      completed,
+      points,
+      assignedToId,
+    },
+    include: {
+      assignedTo: true,
+    },
   });
 }
 
+/**
+ * Supprimer une tâche par son ID.
+ */
 export async function deleteTask(taskId: string) {
   return prisma.task.delete({ where: { id: taskId } });
 }

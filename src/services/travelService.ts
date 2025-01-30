@@ -1,4 +1,3 @@
-// src/services/travelService.ts
 import { prisma } from '../config/db';
 
 interface CreateTravelIdeaInput {
@@ -9,12 +8,16 @@ interface CreateTravelIdeaInput {
   creatorId?: string;
 }
 
+/**
+ * Crée une nouvelle idée de voyage pour un foyer.
+ */
 export async function createTravelIdea(data: CreateTravelIdeaInput) {
   const { title, description, location, foyerId, creatorId } = data;
   if (!title) {
     throw new Error('Le titre de l’idée de voyage est obligatoire.');
   }
 
+  // Création en base
   const newIdea = await prisma.travelIdea.create({
     data: {
       title,
@@ -28,11 +31,11 @@ export async function createTravelIdea(data: CreateTravelIdeaInput) {
 }
 
 /**
- * Récupère toutes les idées de voyage d'un foyer.
- * Possibilité de trier par votes descendants.
+ * Récupère toutes les idées de voyage d'un foyer,
+ * avec possibilité de trier par nombre de votes.
  */
 export async function getAllTravelIdeas(foyerId: string, sortByVotes?: boolean) {
-  // Ajout de "as const" pour que TypeScript reconnaisse la valeur littérale 'desc'
+  // On choisit l'ordre de tri
   const orderByClause = sortByVotes
     ? { votes: 'desc' as const }
     : { createdAt: 'desc' as const };
@@ -50,13 +53,13 @@ export async function getAllTravelIdeas(foyerId: string, sortByVotes?: boolean) 
 }
 
 /**
- * Récupère une idée de voyage précise
+ * Récupère une idée de voyage précise par ID.
  */
 export async function getTravelIdeaById(ideaId: string) {
   const idea = await prisma.travelIdea.findUnique({
     where: { id: ideaId },
     include: {
-      creator: true,
+      creator: true, // Inclure toutes les infos du créateur
     },
   });
   return idea;
@@ -75,6 +78,7 @@ interface UpdateTravelIdeaInput {
 export async function updateTravelIdea(data: UpdateTravelIdeaInput) {
   const { ideaId, title, description, location } = data;
 
+  // Vérifie l'existence
   const existing = await prisma.travelIdea.findUnique({
     where: { id: ideaId },
   });
@@ -82,6 +86,7 @@ export async function updateTravelIdea(data: UpdateTravelIdeaInput) {
     throw new Error('Idée de voyage introuvable.');
   }
 
+  // Mise à jour
   const updated = await prisma.travelIdea.update({
     where: { id: ideaId },
     data: {
@@ -94,7 +99,7 @@ export async function updateTravelIdea(data: UpdateTravelIdeaInput) {
 }
 
 /**
- * Supprime une idée de voyage.
+ * Supprime une idée de voyage par ID.
  */
 export async function deleteTravelIdea(ideaId: string) {
   const existing = await prisma.travelIdea.findUnique({
@@ -111,7 +116,7 @@ export async function deleteTravelIdea(ideaId: string) {
 }
 
 /**
- * Vote (like) pour l'idée (incrementer `votes`).
+ * Incrémente de 1 le champ `votes` de l’idée de voyage.
  */
 export async function voteForTravelIdea(ideaId: string) {
   const existing = await prisma.travelIdea.findUnique({
@@ -124,9 +129,7 @@ export async function voteForTravelIdea(ideaId: string) {
   const updated = await prisma.travelIdea.update({
     where: { id: ideaId },
     data: {
-      votes: {
-        increment: 1,
-      },
+      votes: { increment: 1 },
     },
   });
   return updated;

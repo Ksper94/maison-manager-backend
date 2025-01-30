@@ -1,34 +1,61 @@
 import { Request, Response, NextFunction } from 'express';
 import { prisma } from '../config/db';
 
-export async function getLeaderboardController(req: Request, res: Response, next: NextFunction) {
+/**
+ * Récupère le classement (leaderboard) d'un foyer,
+ * en se basant sur le *premier* foyer trouvé de l'utilisateur.
+ */
+export async function getLeaderboardController(
+  req: Request,
+  res: Response,
+  next: NextFunction
+) {
   try {
-    const userId = (req as any).userId;
+    const userId = (req as any).userId as string; // ou autre méthode pour récupérer userId
 
-    // On récupère l'utilisateur pour connaître son foyer
-    const user = await prisma.user.findUnique({
-      where: { id: userId },
-      select: { foyerId: true }, // Sélectionne uniquement les données nécessaires
-    });
-    if (!user || !user.foyerId) {
-      return res.status(403).json({ message: 'Vous devez appartenir à un foyer pour voir le classement.' });
+    if (!userId) {
+      return res.status(401).json({ message: 'Authentification requise.' });
     }
 
-    // Récupérer les membres du foyer, triés par points décroissants
-    const members = await prisma.user.findMany({
-      where: { foyerId: user.foyerId },
-      orderBy: { points: 'desc' },
-      select: {
-        id: true,
-        name: true,
-        points: true,
+    // 1) Trouver le pivot userFoyer pour connaître le foyerId de l'utilisateur
+    const userFoyerPivot = await prisma.userFoyer.findFirst({
+      where: { userId },
+    });
+
+    if (!userFoyerPivot) {
+      return res
+        .status(403)
+        .json({ message: 'Vous devez appartenir à un foyer pour voir le classement.' });
+    }
+
+    const foyerId = userFoyerPivot.foyerId;
+
+    // 2) Récupérer tous les userFoyer records pour ce foyer
+    //    et trier par user.points en ordre descendant
+    const userFoyerRecords = await prisma.userFoyer.findMany({
+      where: { foyerId },
+      orderBy: {
+        user: {
+          points: 'desc', // Tri par points du user
+        },
+      },
+      include: {
+        user: {
+          select: {
+            id: true,
+            name: true,
+            points: true,
+          },
+        },
       },
     });
 
-    // Réponse JSON avec le classement
+    // 3) Extraire la liste des users triés par points
+    const leaderboard = userFoyerRecords.map((uf) => uf.user);
+
     return res.status(200).json({
       message: 'Classement récupéré avec succès',
-      leaderboard: members,
+      leaderboard,
     });
   } catch (error) {
     console.error('Erreur lors de la récupération du classement :', error);

@@ -11,15 +11,49 @@ import { prisma } from '../config/db';
 import { sendPushNotification } from '../utils/notifications';
 
 /**
- * Création d'une nouvelle recette
+ * Récupère le premier foyerId trouvé pour un user (many-to-many).
+ */
+async function getUserFoyerId(userId: string): Promise<string | null> {
+  const pivot = await prisma.userFoyer.findFirst({
+    where: { userId },
+  });
+  return pivot?.foyerId || null;
+}
+
+/**
+ * Récupère tous les membres (avec pushToken) d'un foyer via la table pivot.
+ */
+async function getFoyerMembersPushTokens(foyerId: string): Promise<string[]> {
+  const userFoyerRecords = await prisma.userFoyer.findMany({
+    where: { foyerId },
+    include: {
+      user: {
+        select: { pushToken: true },
+      },
+    },
+  });
+
+  return userFoyerRecords
+    .map((uf) => uf.user?.pushToken)
+    .filter((token): token is string => Boolean(token));
+}
+
+/**
+ * 1) Création d'une nouvelle recette
  */
 export async function createRecipeController(req: Request, res: Response, next: NextFunction) {
   try {
-    const userId = (req as any).userId;
+    const userId = (req as any).userId as string;
+    if (!userId) {
+      return res.status(401).json({ message: 'Authentification requise.' });
+    }
 
-    const user = await prisma.user.findUnique({ where: { id: userId }, select: { foyerId: true } });
-    if (!user || !user.foyerId) {
-      return res.status(403).json({ message: 'Vous devez appartenir à un foyer pour proposer une recette.' });
+    // On récupère le foyerId via la table pivot
+    const foyerId = await getUserFoyerId(userId);
+    if (!foyerId) {
+      return res
+        .status(403)
+        .json({ message: 'Vous devez appartenir à un foyer pour proposer une recette.' });
     }
 
     const { title, description, ingredients, instructions } = req.body;
@@ -28,26 +62,24 @@ export async function createRecipeController(req: Request, res: Response, next: 
       return res.status(400).json({ message: 'Le titre de la recette est obligatoire.' });
     }
 
+    // Création de la recette (service Prisma)
     const recipe = await createRecipe({
       title,
       description,
       ingredients,
       instructions,
-      foyerId: user.foyerId,
+      foyerId,
       creatorId: userId,
     });
 
-    const members = await prisma.user.findMany({
-      where: { foyerId: user.foyerId },
-      select: { pushToken: true },
-    });
-
-    const pushTokens = members
-      .map((member) => member.pushToken)
-      .filter((token): token is string => Boolean(token));
+    // Notifier les membres du foyer
+    const pushTokens = await getFoyerMembersPushTokens(foyerId);
 
     for (const token of pushTokens) {
-      await sendPushNotification(token, `Nouvelle recette : "${title}" a été ajoutée dans votre foyer !`);
+      await sendPushNotification(
+        token,
+        `Nouvelle recette : "${title}" a été ajoutée dans votre foyer !`
+      );
     }
 
     return res.status(201).json({
@@ -60,28 +92,29 @@ export async function createRecipeController(req: Request, res: Response, next: 
 }
 
 /**
- * Suppression d'une recette
+ * 2) Suppression d'une recette
  */
 export async function deleteRecipeController(req: Request, res: Response, next: NextFunction) {
   try {
     const recipeId = req.params.recipeId;
 
-    const recipe = await prisma.recipe.findUnique({ where: { id: recipeId }, select: { title: true, foyerId: true } });
-    if (!recipe) {
-      return res.status(404).json({ message: 'Recette introuvable ou déjà supprimée.' });
-    }
-
-    const deleted = await deleteRecipe(recipeId);
-
-    const members = await prisma.user.findMany({
-      where: { foyerId: recipe.foyerId },
-      select: { pushToken: true },
+    // On récupère la recette pour connaître son foyerId
+    const recipe = await prisma.recipe.findUnique({
+      where: { id: recipeId },
+      select: { title: true, foyerId: true },
     });
 
-    const pushTokens = members
-      .map((member) => member.pushToken)
-      .filter((token): token is string => Boolean(token));
+    if (!recipe) {
+      return res
+        .status(404)
+        .json({ message: 'Recette introuvable ou déjà supprimée.' });
+    }
 
+    // Suppression via le service
+    const deleted = await deleteRecipe(recipeId);
+
+    // Notifier les membres du foyer
+    const pushTokens = await getFoyerMembersPushTokens(recipe.foyerId);
     for (const token of pushTokens) {
       await sendPushNotification(token, `La recette "${recipe.title}" a été supprimée.`);
     }
@@ -95,27 +128,40 @@ export async function deleteRecipeController(req: Request, res: Response, next: 
   }
 }
 
-// Ajout des fonctions manquantes
+/**
+ * 3) Récupération de toutes les recettes du foyer de l'utilisateur
+ */
 export async function getAllRecipesController(req: Request, res: Response, next: NextFunction) {
   try {
-    const userId = (req as any).userId;
-    const user = await prisma.user.findUnique({ where: { id: userId } });
-    if (!user || !user.foyerId) {
+    const userId = (req as any).userId as string;
+    if (!userId) {
+      return res.status(401).json({ message: 'Authentification requise.' });
+    }
+
+    // Trouver le foyerId
+    const foyerId = await getUserFoyerId(userId);
+    if (!foyerId) {
       return res.status(403).json({ message: 'Accès refusé : pas de foyer.' });
     }
 
     const sortByVotes = req.query.sortByVotes === 'true';
-    const recipes = await getAllRecipes(user.foyerId, sortByVotes);
+
+    // Récupération de toutes les recettes via le service
+    const recipes = await getAllRecipes(foyerId, sortByVotes);
     return res.status(200).json(recipes);
   } catch (error) {
     next(error);
   }
 }
 
+/**
+ * 4) Récupération d'une recette par ID
+ */
 export async function getRecipeByIdController(req: Request, res: Response, next: NextFunction) {
   try {
     const recipeId = req.params.recipeId;
     const recipe = await getRecipeById(recipeId);
+
     if (!recipe) {
       return res.status(404).json({ message: 'Recette introuvable.' });
     }
@@ -125,11 +171,15 @@ export async function getRecipeByIdController(req: Request, res: Response, next:
   }
 }
 
+/**
+ * 5) Mise à jour d'une recette
+ */
 export async function updateRecipeController(req: Request, res: Response, next: NextFunction) {
   try {
     const recipeId = req.params.recipeId;
     const { title, description, ingredients, instructions } = req.body;
 
+    // Mise à jour via le service
     const updated = await updateRecipe({
       recipeId,
       title,
@@ -147,10 +197,16 @@ export async function updateRecipeController(req: Request, res: Response, next: 
   }
 }
 
+/**
+ * 6) Vote pour une recette
+ */
 export async function voteForRecipeController(req: Request, res: Response, next: NextFunction) {
   try {
     const recipeId = req.params.recipeId;
+
+    // Vote via le service
     const updated = await voteForRecipe(recipeId);
+
     return res.status(200).json({
       message: 'Vote enregistré.',
       recipe: updated,
