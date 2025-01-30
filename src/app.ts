@@ -4,7 +4,7 @@ import helmet from 'helmet';
 import morgan from 'morgan';
 import { errorHandler } from './middlewares/errorHandler';
 import { router as mainRouter } from './routes';
-import foyerRoute from './routes/foyerRoute';
+import foyerRoute from './routes/foyerRoutes';
 
 const app = express();
 
