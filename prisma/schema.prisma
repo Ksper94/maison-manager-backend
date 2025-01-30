@@ -15,7 +15,7 @@ model Foyer {
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
 
-  members        User[]
+  members        UserFoyer[] // Relation many-to-many via UserFoyer
   calendarEvents CalendarEvent[]
   tasks          Task[]
   shoppingItems  ShoppingItem[]
@@ -32,9 +32,7 @@ model User {
   createdAt  DateTime @default(now())
   updatedAt  DateTime @updatedAt
 
-  foyerId    String?
-  foyer      Foyer?   @relation(fields: [foyerId], references: [id])
-
+  foyers     UserFoyer[] // Relation many-to-many via UserFoyer
   acceptedFoyerRuleAt DateTime?
 
   createdEvents      CalendarEvent[] @relation("UserCreatorRelation")
@@ -46,6 +44,17 @@ model User {
 
   createdRecipes     Recipe[] @relation("RecipeCreatorRelation")
   pushToken          String?  // Token pour Expo Push Notifications
+}
+
+// Nouvelle table pour la relation many-to-many
+model UserFoyer {
+  id      String @id @default(cuid())
+  userId  String
+  foyerId String
+  user    User   @relation(fields: [userId], references: [id])
+  foyer   Foyer  @relation(fields: [foyerId], references: [id])
+
+  @@unique([userId, foyerId])
 }
 
 model Task {

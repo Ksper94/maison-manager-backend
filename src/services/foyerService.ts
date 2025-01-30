@@ -1,3 +1,4 @@
+// src/services/foyerService.ts
 import { prisma } from '../config/db';
 import { generateInvitationCode } from '../utils/generateInvitationCode';
 
@@ -10,43 +11,55 @@ import { generateInvitationCode } from '../utils/generateInvitationCode';
  * @param rule - Règle du foyer
  * @returns L'utilisateur mis à jour (contenant aussi l'info du foyer)
  */
-export async function createFoyer(userId: string, name: string, rule: string) {
-  const existingUser = await prisma.user.findUnique({
-    where: { id: userId },
-  });
+export async function createFoyer(userId: string, name: string, rule: string): Promise<User & { foyers: Foyer[] }> {
+  try {
+    const existingUser = await prisma.user.findUnique({
+      where: { id: userId },
+    });
 
-  if (!existingUser) {
-    throw new Error('Utilisateur introuvable. Impossible de créer un foyer.');
+    if (!existingUser) {
+      throw new Error('Utilisateur introuvable. Impossible de créer un foyer.');
+    }
+
+    const code = generateInvitationCode(8);
+
+    const newFoyer = await prisma.foyer.create({
+      data: {
+        name,
+        code,
+        rule,
+      },
+    });
+
+    // Associer l'utilisateur au nouveau foyer
+    const userFoyer = await prisma.userFoyer.create({
+      data: {
+        userId: userId,
+        foyerId: newFoyer.id,
+      },
+    });
+
+    // Mettre à jour l'utilisateur pour inclure le nouveau foyer
+    const updatedUser = await prisma.user.findUnique({
+      where: { id: userId },
+      include: {
+        foyers: {
+          include: {
+            foyer: true
+          }
+        }
+      },
+    });
+
+    if (!updatedUser) {
+      throw new Error('Erreur lors de la mise à jour de l\'utilisateur après la création du foyer');
+    }
+
+    return updatedUser;
+  } catch (error) {
+    console.error('Erreur dans createFoyer:', error);
+    throw error;
   }
-
-  if (existingUser.foyerId) {
-    throw new Error(
-      'Vous appartenez déjà à un foyer. Impossible de créer un nouveau foyer.'
-    );
-  }
-
-  const code = generateInvitationCode(8);
-
-  const newFoyer = await prisma.foyer.create({
-    data: {
-      name,
-      code,
-      rule,
-    },
-  });
-
-  const updatedUser = await prisma.user.update({
-    where: { id: userId },
-    data: {
-      foyerId: newFoyer.id,
-      acceptedFoyerRuleAt: new Date(),
-    },
-    include: {
-      foyer: true,
-    },
-  });
-
-  return updatedUser;
 }
 
 /**
@@ -57,51 +70,59 @@ export async function createFoyer(userId: string, name: string, rule: string) {
  * @param code - Code d'invitation unique du foyer
  * @returns L'utilisateur mis à jour, avec la référence au foyer
  */
-export async function joinFoyer(userId: string, code: string) {
-  const existingUser = await prisma.user.findUnique({
-    where: { id: userId },
-    include: { foyer: true }, // Inclure les infos sur le foyer pour comparaison
-  });
+export async function joinFoyer(userId: string, code: string): Promise<User & { foyers: Foyer[] }> {
+  try {
+    const existingUser = await prisma.user.findUnique({
+      where: { id: userId },
+      include: { foyers: { include: { foyer: true } } },
+    });
 
-  if (!existingUser) {
-    throw new Error('Utilisateur introuvable. Impossible de rejoindre un foyer.');
-  }
+    if (!existingUser) {
+      throw new Error('Utilisateur introuvable. Impossible de rejoindre un foyer.');
+    }
 
-  // Vérifie si l'utilisateur est déjà membre d'un foyer
-  if (existingUser.foyerId) {
-    // Vérifie si l'utilisateur essaie de rejoindre son propre foyer
-    const foyer = await prisma.foyer.findUnique({ where: { code } });
+    // Trouver le foyer via le code
+    const foyer = await prisma.foyer.findUnique({
+      where: { code },
+    });
 
-    if (foyer && foyer.id === existingUser.foyerId) {
-      // Si l'utilisateur est déjà membre du foyer, renvoie directement ses infos
+    if (!foyer) {
+      throw new Error('Foyer introuvable ou code invalide.');
+    }
+
+    // Vérifier si l'utilisateur est déjà membre de ce foyer
+    const isAlreadyMember = existingUser.foyers.some(uf => uf.foyerId === foyer.id);
+    if (isAlreadyMember) {
       return existingUser;
     }
 
-    throw new Error(
-      'Vous appartenez déjà à un foyer. Impossible de rejoindre un autre foyer.'
-    );
+    // Associer l'utilisateur au foyer
+    await prisma.userFoyer.create({
+      data: {
+        userId: userId,
+        foyerId: foyer.id,
+      },
+    });
+
+    // Récupérer l'utilisateur mis à jour avec les informations du nouveau foyer
+    const updatedUser = await prisma.user.findUnique({
+      where: { id: userId },
+      include: {
+        foyers: {
+          include: {
+            foyer: true
+          }
+        }
+      },
+    });
+
+    if (!updatedUser) {
+      throw new Error('Erreur lors de la mise à jour de l\'utilisateur après avoir rejoint le foyer');
+    }
+
+    return updatedUser;
+  } catch (error) {
+    console.error('Erreur dans joinFoyer:', error);
+    throw error;
   }
-
-  // Trouver le foyer via le code
-  const foyer = await prisma.foyer.findUnique({
-    where: { code },
-  });
-
-  if (!foyer) {
-    throw new Error('Foyer introuvable ou code invalide.');
-  }
-
-  // Associer l'utilisateur au foyer
-  const updatedUser = await prisma.user.update({
-    where: { id: userId },
-    data: {
-      foyerId: foyer.id,
-      acceptedFoyerRuleAt: new Date(),
-    },
-    include: {
-      foyer: true,
-    },
-  });
-
-  return updatedUser;
 }
