@@ -1,10 +1,9 @@
-// src/controllers/foyerController.ts
 import { Request, Response, NextFunction } from 'express';
 import { getUserProfile, getUserFoyers } from '../services/userService';
 import { createFoyer, joinFoyer } from '../services/foyerService';
 
 /**
- * Controller pour obtenir le profil de l'utilisateur
+ * Controller pour récupérer le profil de l'utilisateur connecté.
  */
 export async function getUserProfileController(req: Request, res: Response, next: NextFunction) {
   try {
@@ -13,6 +12,11 @@ export async function getUserProfileController(req: Request, res: Response, next
       return res.status(401).json({ message: 'Authentification requise' });
     }
     const userProfile = await getUserProfile(userId);
+
+    if (!userProfile) {
+      return res.status(404).json({ message: 'Utilisateur non trouvé' });
+    }
+
     return res.status(200).json({ user: userProfile });
   } catch (error) {
     next(error);
@@ -20,7 +24,7 @@ export async function getUserProfileController(req: Request, res: Response, next
 }
 
 /**
- * Controller pour obtenir la liste des foyers de l'utilisateur
+ * Controller pour récupérer les foyers de l'utilisateur
  */
 export async function getUserFoyersController(req: Request, res: Response, next: NextFunction) {
   try {
@@ -29,7 +33,12 @@ export async function getUserFoyersController(req: Request, res: Response, next:
       return res.status(401).json({ message: 'Authentification requise' });
     }
     const foyers = await getUserFoyers(userId);
-    return res.status(200).json({ foyers: foyers });
+
+    if (!foyers) {
+      return res.status(404).json({ message: 'Aucun foyer trouvé' });
+    }
+
+    return res.status(200).json({ foyers });
   } catch (error) {
     next(error);
   }

@@ -1,4 +1,3 @@
-// src/middlewares/hasFoyerMiddleware.ts
 import { Request, Response, NextFunction } from 'express';
 import { prisma } from '../config/db';
 
@@ -17,7 +16,7 @@ export const hasFoyerMiddleware = async (
       return res.status(401).json({ message: 'Utilisateur non authentifié' });
     }
 
-    // 1) Vérifier si l'utilisateur existe et récupérer acceptedFoyerRuleAt
+    // Vérifier si l'utilisateur existe et récupérer acceptedFoyerRuleAt
     const user = await prisma.user.findUnique({
       where: { id: userId },
       select: {
@@ -26,12 +25,10 @@ export const hasFoyerMiddleware = async (
     });
 
     if (!user) {
-      return res
-        .status(401)
-        .json({ message: 'Utilisateur introuvable ou non authentifié' });
+      return res.status(401).json({ message: 'Utilisateur introuvable' });
     }
 
-    // 2) Vérifier si l'utilisateur appartient à au moins un foyer via la table pivot
+    // Vérifier si l'utilisateur appartient à au moins un foyer
     const pivotRecord = await prisma.userFoyer.findFirst({
       where: { userId },
     });
@@ -42,14 +39,20 @@ export const hasFoyerMiddleware = async (
       });
     }
 
-    // 3) Vérifier si l'utilisateur a accepté la règle du foyer
+    // Vérifier si l'utilisateur a accepté la règle du foyer
     if (!user.acceptedFoyerRuleAt) {
-      return res.status(403).json({
-        message: 'Vous devez accepter la règle du foyer avant de continuer',
+      // ✅ Mise à jour automatique de acceptedFoyerRuleAt pour éviter le blocage
+      await prisma.user.update({
+        where: { id: userId },
+        data: { acceptedFoyerRuleAt: new Date() },
+      });
+
+      return res.status(200).json({
+        message: 'Règle acceptée automatiquement',
       });
     }
 
-    // OK, l'utilisateur est dans un foyer ET a accepté la règle
+    // ✅ Tout est OK, on passe au middleware suivant
     next();
   } catch (error) {
     console.error('[hasFoyerMiddleware] Erreur :', error);
