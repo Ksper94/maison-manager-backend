@@ -4,7 +4,7 @@ import bcrypt from 'bcrypt';
 import { generateToken } from '../utils/jwt';
 
 /**
- * Récupère le profil utilisateur avec ses foyers
+ * Récupère le profil utilisateur avec son foyer actif
  */
 export const getUserProfile = async (req: Request, res: Response, next: NextFunction) => {
   try {
@@ -14,14 +14,11 @@ export const getUserProfile = async (req: Request, res: Response, next: NextFunc
       return res.status(401).json({ message: 'Authentification requise' });
     }
 
-    // Inclure les foyers en utilisant une jointure avec UserFoyer
     const user = await prisma.user.findUnique({
       where: { id: userId },
       include: {
         foyers: {
-          select: {
-            foyer: true, // Inclure les détails du foyer
-          },
+          select: { foyer: true }, // Inclure les détails du foyer
         },
       },
     });
@@ -30,8 +27,7 @@ export const getUserProfile = async (req: Request, res: Response, next: NextFunc
       return res.status(404).json({ message: 'Utilisateur non trouvé' });
     }
 
-    // Mapper les foyers pour obtenir uniquement les données du foyer
-    const foyers = user.foyers.map((uf) => uf.foyer);
+    const activeFoyer = user.foyers.length > 0 ? user.foyers[0].foyer : null;
 
     return res.status(200).json({
       user: {
@@ -39,7 +35,7 @@ export const getUserProfile = async (req: Request, res: Response, next: NextFunc
         name: user.name,
         email: user.email,
         avatar: user.avatar,
-        foyers, // Inclure les foyers dans la réponse
+        foyer: activeFoyer,
         pushToken: user.pushToken,
       },
     });
@@ -61,7 +57,6 @@ export const updateUserProfile = async (req: Request, res: Response, next: NextF
       return res.status(401).json({ message: 'Authentification requise' });
     }
 
-    // Validation des champs
     if (!name && !avatar) {
       return res.status(400).json({ message: 'Aucun champ à mettre à jour' });
     }
@@ -91,7 +86,7 @@ export const updateUserProfile = async (req: Request, res: Response, next: NextF
 };
 
 /**
- * Enregistrement d'un nouvel utilisateur
+ * Inscription d'un nouvel utilisateur
  */
 export const register = async (req: Request, res: Response, next: NextFunction) => {
   try {
@@ -145,14 +140,11 @@ export const login = async (req: Request, res: Response, next: NextFunction) => 
       return res.status(400).json({ message: 'Email et mot de passe sont obligatoires' });
     }
 
-    // Inclure les foyers en utilisant une jointure avec UserFoyer
     const user = await prisma.user.findUnique({
       where: { email },
       include: {
         foyers: {
-          select: {
-            foyer: true, // Inclure les détails du foyer
-          },
+          select: { foyer: true },
         },
       },
     });
@@ -175,7 +167,6 @@ export const login = async (req: Request, res: Response, next: NextFunction) => 
 
     const token = generateToken({ userId: user.id });
 
-    // Mapper les foyers pour obtenir uniquement les données du foyer
     const foyers = user.foyers.map((uf) => uf.foyer);
 
     return res.status(200).json({
@@ -186,7 +177,7 @@ export const login = async (req: Request, res: Response, next: NextFunction) => 
         name: user.name,
         email: user.email,
         avatar: user.avatar,
-        foyers, // Inclure les foyers dans la réponse
+        foyers,
         pushToken: user.pushToken,
       },
     });
