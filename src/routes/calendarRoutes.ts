@@ -13,18 +13,15 @@ import { createPlanningController } from '../controllers/calendarPlanningControl
 const router = Router();
 
 /**
- * Routes pour la gestion du calendrier (événements standards)
+ * Routes pour les événements standards
  */
-
-// Créer un événement standard : POST /api/calendar
 router.post(
   '/',
-  authMiddleware,       // Vérifie l'authentification
-  hasFoyerMiddleware,   // Vérifie si l'utilisateur appartient à un foyer
+  authMiddleware,
+  hasFoyerMiddleware,
   createEventController
 );
 
-// Lire tous les événements d'un foyer : GET /api/calendar
 router.get(
   '/',
   authMiddleware,
@@ -32,7 +29,6 @@ router.get(
   getEventsController
 );
 
-// Lire un événement spécifique : GET /api/calendar/:eventId
 router.get(
   '/:eventId',
   authMiddleware,
@@ -40,7 +36,6 @@ router.get(
   getEventByIdController
 );
 
-// Mettre à jour un événement : PATCH /api/calendar/:eventId
 router.patch(
   '/:eventId',
   authMiddleware,
@@ -48,7 +43,6 @@ router.patch(
   updateEventController
 );
 
-// Supprimer un événement : DELETE /api/calendar/:eventId
 router.delete(
   '/:eventId',
   authMiddleware,
@@ -58,8 +52,6 @@ router.delete(
 
 /**
  * Route dédiée pour la création de plannings personnalisés
- * (qui décomposent le planning en plusieurs événements).
- * Endpoint : POST /api/calendar/planning
  */
 router.post(
   '/planning',
