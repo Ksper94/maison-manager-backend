@@ -1,6 +1,8 @@
-// backend/calendarEvents.ts
-
 import { prisma } from '../config/db';
+
+/* =========================== */
+/*    Interfaces d'entrée     */
+/* =========================== */
 
 interface CreateEventInput {
   title: string;
@@ -22,8 +24,29 @@ interface UpdateEventInput {
 }
 
 /**
- * Créer un nouvel événement de calendrier.
- * Utilisé pour les événements standards.
+ * Pour la création d'un planning via un format personnalisé.
+ * Pour un planning mensuel, le front-end doit envoyer :
+ *  - title, recurrence ("monthly" ou "weekly"),
+ *  - schedule: un objet dont chaque clé représente un jour sélectionné (pour "monthly", une chaîne représentant le numéro du jour; pour "weekly", un nom de jour)
+ *  - pour monthly : month (1-12) et year (ex. 2025)
+ *  - foyerId et éventuellement creatorId.
+ */
+interface CreatePlanningInput {
+  title: string;
+  recurrence: 'weekly' | 'monthly';
+  schedule: { [dayKey: string]: { start: string; end: string } };
+  foyerId: string;
+  creatorId?: string;
+  month?: number; // requis pour un planning mensuel
+  year?: number;  // requis pour un planning mensuel
+}
+
+/* =========================== */
+/*    Fonctions de base       */
+/* =========================== */
+
+/**
+ * Créer un événement standard.
  */
 export async function createCalendarEvent(data: CreateEventInput) {
   const { title, description, startDate, endDate, recurrence, foyerId, creatorId } = data;
@@ -39,7 +62,6 @@ export async function createCalendarEvent(data: CreateEventInput) {
     );
   }
 
-  // Création en base
   return prisma.calendarEvent.create({
     data: {
       title,
@@ -54,28 +76,7 @@ export async function createCalendarEvent(data: CreateEventInput) {
 }
 
 /**
- * Interface pour la création d'un planning.
- * Pour un planning mensuel, le front-end doit envoyer :
- * - title, recurrence ("monthly" ou "weekly"),
- * - schedule: un objet où chaque clé représente un jour (pour monthly, un numéro en chaîne ou pour weekly, un nom de jour)
- * - pour monthly: month (1-12) et year (ex. 2025)
- * - foyerId et éventuellement creatorId.
- */
-interface CreatePlanningInput {
-  title: string;
-  recurrence: 'weekly' | 'monthly';
-  schedule: { [dayKey: string]: { start: string; end: string } };
-  foyerId: string;
-  creatorId?: string;
-  month?: number; // pour planning mensuel
-  year?: number;  // pour planning mensuel
-}
-
-/**
  * Créer un planning à partir d'un format personnalisé.
- * Pour un planning mensuel, l'objet envoyé doit contenir le champ `schedule` (les créneaux par jour),
- * ainsi que `month` et `year`.
- * Pour un planning hebdomadaire, on suppose que les clés du planning sont des noms de jours ("monday", "tuesday", etc.).
  * Cette fonction décompose le planning en plusieurs événements individuels.
  */
 export async function createPlanningEvent(data: CreatePlanningInput) {
@@ -89,10 +90,12 @@ export async function createPlanningEvent(data: CreatePlanningInput) {
     for (const dayStr in data.schedule) {
       const day = parseInt(dayStr, 10); // par ex. "3" devient 3
       const { start, end } = data.schedule[dayStr];
-      // Les horaires sont envoyés en ISO, on en extrait l'heure/minute
+
+      // Extraction des horaires depuis les chaînes ISO envoyées
       const startDateOriginal = new Date(start);
       const endDateOriginal = new Date(end);
-      // Créer un événement pour ce jour en utilisant l'année et le mois choisis
+
+      // Construction des dates en utilisant l'année, le mois et le jour choisis
       const startDate = new Date(
         data.year,
         data.month - 1,
@@ -109,16 +112,18 @@ export async function createPlanningEvent(data: CreatePlanningInput) {
         endDateOriginal.getMinutes(),
         endDateOriginal.getSeconds()
       );
+
       if (startDate >= endDate) {
         throw new Error(`La date de fin doit être postérieure à la date de début pour le jour ${day}`);
       }
+
       const event = await prisma.calendarEvent.create({
         data: {
           title: data.title,
           description: `Planning mensuel pour le jour ${day}`,
           startDate,
           endDate,
-          recurrence: data.recurrence,
+          recurrence: data.recurrence, // "monthly"
           foyerId: data.foyerId,
           creatorId: data.creatorId,
         },
@@ -126,7 +131,7 @@ export async function createPlanningEvent(data: CreatePlanningInput) {
       events.push(event);
     }
   } else if (data.recurrence === 'weekly') {
-    // Mapping des jours de la semaine
+    // Mapping pour convertir les noms de jours en valeur numérique
     const dayOfWeekMapping: { [key: string]: number } = {
       monday: 1,
       tuesday: 2,
@@ -136,7 +141,7 @@ export async function createPlanningEvent(data: CreatePlanningInput) {
       saturday: 6,
       sunday: 0,
     };
-    // Pour chaque jour dans le planning hebdomadaire
+
     for (const dayKey in data.schedule) {
       const { start, end } = data.schedule[dayKey];
       const targetDay = dayOfWeekMapping[dayKey.toLowerCase()];
@@ -150,6 +155,7 @@ export async function createPlanningEvent(data: CreatePlanningInput) {
       if (daysToAdd <= 0) daysToAdd += 7;
       const eventDateBase = new Date(baseDate);
       eventDateBase.setDate(baseDate.getDate() + daysToAdd);
+
       const startDateOriginal = new Date(start);
       const endDateOriginal = new Date(end);
       const startDate = new Date(
@@ -168,16 +174,18 @@ export async function createPlanningEvent(data: CreatePlanningInput) {
         endDateOriginal.getMinutes(),
         endDateOriginal.getSeconds()
       );
+
       if (startDate >= endDate) {
         throw new Error(`La date de fin doit être postérieure à la date de début pour ${dayKey}`);
       }
+
       const event = await prisma.calendarEvent.create({
         data: {
           title: data.title,
           description: `Planning hebdomadaire pour ${dayKey}`,
           startDate,
           endDate,
-          recurrence: data.recurrence,
+          recurrence: data.recurrence, // "weekly"
           foyerId: data.foyerId,
           creatorId: data.creatorId,
         },
@@ -191,10 +199,14 @@ export async function createPlanningEvent(data: CreatePlanningInput) {
   return events;
 }
 
+/* =========================== */
+/*   Autres Fonctions CRUD    */
+/* =========================== */
+
 /**
  * Récupérer la liste des événements d'un foyer,
  * avec un éventuel intervalle de date (from / to).
- * Gère la récurrence en générant des événements "dépliés" si besoin.
+ * La fonction génère également des occurrences récurrentes si nécessaire.
  */
 export async function getCalendarEvents(foyerId: string, from?: Date, to?: Date) {
   const whereClause: any = { foyerId };
@@ -251,7 +263,7 @@ export async function updateCalendarEvent(data: UpdateEventInput) {
 }
 
 /**
- * Supprime un événement de calendrier par ID.
+ * Supprime un événement de calendrier par son ID.
  */
 export async function deleteCalendarEvent(eventId: string) {
   return prisma.calendarEvent.delete({
@@ -259,8 +271,13 @@ export async function deleteCalendarEvent(eventId: string) {
   });
 }
 
+/* =========================== */
+/* Génération d'occurrences    */
+/* =========================== */
+
 /**
  * Génère les occurrences récurrentes d'un événement (daily, weekly, monthly, yearly).
+ * Renvoie un tableau "déplié" d'événements.
  */
 function generateRecurringEvents(event: any, from?: Date, to?: Date) {
   const recurringEvents = [];
