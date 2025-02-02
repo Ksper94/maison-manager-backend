@@ -90,7 +90,9 @@ export async function getCalendarEvents(foyerId: string, from?: Date, to?: Date)
   const events = await prisma.calendarEvent.findMany({
     where: whereClause,
     orderBy: { startDate: 'asc' },
+    take: 1000, // Limite à 1000 événements
   });
+  
 
   // Génération des occurrences récurrentes, si besoin
   return events
@@ -148,30 +150,26 @@ export async function deleteCalendarEvent(eventId: string) {
  * Génère les occurrences récurrentes d'un événement (daily, weekly, monthly, yearly).
  * Renvoie un tableau "déplié" d'événements dupliqués dans l'intervalle [from..to].
  */
-function generateRecurringEvents(
-  event: any,
-  from?: Date,
-  to?: Date
-) {
+function generateRecurringEvents(event: any, from?: Date, to?: Date) {
   const recurringEvents = [];
   let currentDate = new Date(event.startDate);
 
-  // On génère des occurrences jusqu'à la borne "to" (si définie).
-  while (!to || currentDate <= to) {
-    // On ne stocke l'occurrence que si elle est >= from (si défini).
+  const MAX_OCCURRENCES = 500; // Limite à 500 occurrences pour éviter OOM
+  let occurrencesCount = 0;
+
+  while ((!to || currentDate <= to) && occurrencesCount < MAX_OCCURRENCES) {
     if (!from || currentDate >= from) {
       recurringEvents.push({
         ...event,
         startDate: new Date(currentDate),
         endDate: new Date(
-          currentDate.getTime() +
-            (new Date(event.endDate).getTime() -
-              new Date(event.startDate).getTime())
+          currentDate.getTime() + 
+          (new Date(event.endDate).getTime() - new Date(event.startDate).getTime())
         ),
       });
+      occurrencesCount++;
     }
 
-    // Calcul de la prochaine occurrence selon la récurrence
     switch (event.recurrence) {
       case 'daily':
         currentDate.setDate(currentDate.getDate() + 1);
@@ -186,7 +184,6 @@ function generateRecurringEvents(
         currentDate.setFullYear(currentDate.getFullYear() + 1);
         break;
       default:
-        // Si c'est "none" ou autre, on arrête la génération
         return recurringEvents;
     }
   }
