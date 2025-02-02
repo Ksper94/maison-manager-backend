@@ -1,5 +1,5 @@
 import { Request, Response, NextFunction } from 'express';
-import { createPlanningEvent } from '../services/CalendarService';
+import { createPlanningEvent } from '../services/calendarService';
 import { prisma } from '../config/db';
 import { sendPushNotification } from '../utils/notifications';
 
