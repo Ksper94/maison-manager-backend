@@ -1,3 +1,4 @@
+// createPlanningController.ts
 import { Request, Response, NextFunction } from 'express';
 import { createPlanningEvent } from '../services/calendarService';
 import { prisma } from '../config/db';
@@ -18,7 +19,7 @@ async function verifyUserFoyer(userId: string): Promise<string | null> {
 /**
  * Contrôleur pour la création d'un planning.
  * Le front-end doit envoyer dans le body un objet comprenant :
- * - title, recurrence ("monthly" ou "weekly"),
+ * - title, recurrence ("monthly", "weekly", ou "monthlyOneOff"),
  * - schedule (un objet avec pour chaque jour les horaires start et end),
  * - pour un planning mensuel : month (1-12) et year (ex. 2025).
  * Le foyerId et le creatorId seront ajoutés à partir de l'utilisateur.

@@ -1,5 +1,4 @@
-// backend/calendarEvents.ts
-
+// calendarEvents.ts
 import { prisma } from '../config/db';
 
 /* =========================== */
@@ -28,15 +27,15 @@ interface UpdateEventInput {
 /**
  * Pour la création d'un planning via un format personnalisé.
  * Pour un planning mensuel, le front-end doit envoyer :
- *  - title, recurrence ("monthly" ou "weekly"),
- *  - schedule: un objet dont chaque clé représente un jour sélectionné 
+ *  - title, recurrence ("monthly", "weekly" ou "monthlyOneOff"),
+ *  - schedule : un objet dont chaque clé représente un jour sélectionné 
  *    (pour "monthly", une chaîne représentant le numéro du jour; pour "weekly", un nom de jour),
- *  - pour monthly: month (1-12) et year (ex. 2025),
+ *  - pour monthly : month (1-12) et year (ex. 2025),
  *  - foyerId et éventuellement creatorId.
  */
 interface CreatePlanningInput {
   title: string;
-  recurrence: 'weekly' | 'monthly';
+  recurrence: 'weekly' | 'monthly' | 'monthlyOneOff';
   schedule: { [dayKey: string]: { start: string; end: string } };
   foyerId: string;
   creatorId?: string;
@@ -86,7 +85,7 @@ export async function createPlanningEvent(data: CreatePlanningInput) {
   console.log('[createPlanningEvent] Données reçues :', data);
   const events = [];
 
-  if (data.recurrence === 'monthly') {
+  if (data.recurrence === 'monthly' || data.recurrence === 'monthlyOneOff') {
     if (!data.month || !data.year) {
       throw new Error('Pour un planning mensuel, les champs month et year sont requis.');
     }
@@ -100,7 +99,7 @@ export async function createPlanningEvent(data: CreatePlanningInput) {
       const startDateOriginal = new Date(start);
       const endDateOriginal = new Date(end);
 
-      // Construction des dates
+      // Construction des dates en fonction de l'année et du mois choisis
       const startDate = new Date(
         data.year,
         data.month - 1,
@@ -124,13 +123,16 @@ export async function createPlanningEvent(data: CreatePlanningInput) {
         throw new Error(`La date de fin doit être postérieure à la date de début pour le jour ${day}`);
       }
 
+      // Pour "monthlyOneOff", on stocke la récurrence comme "none" afin d'avoir des événements ponctuels.
+      const eventRecurrence = data.recurrence === 'monthlyOneOff' ? 'none' : 'monthly';
+
       const event = await prisma.calendarEvent.create({
         data: {
           title: data.title,
           description: `Planning mensuel pour le jour ${day}`,
           startDate,
           endDate,
-          recurrence: data.recurrence, // "monthly"
+          recurrence: eventRecurrence,
           foyerId: data.foyerId,
           creatorId: data.creatorId,
         },
