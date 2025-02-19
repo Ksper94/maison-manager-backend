@@ -1,5 +1,5 @@
 import { Request, Response, NextFunction } from 'express';
-import { verifyToken } from '../utils/jwt';
+import { verifyAccessToken } from '../utils/jwt'; // <-- remplacer 'verifyToken' par 'verifyAccessToken'
 
 interface CustomRequest extends Request {
   userId?: string;
@@ -18,7 +18,8 @@ export const authMiddleware = (req: CustomRequest, res: Response, next: NextFunc
       return res.status(401).json({ message: 'Token invalide' });
     }
 
-    const decoded = verifyToken(token);
+    // On vérifie le token en tant qu'access token
+    const decoded = verifyAccessToken(token);
 
     if (!decoded || !decoded.userId) {
       return res.status(401).json({ message: 'Token invalide ou expiré' });

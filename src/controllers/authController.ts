@@ -1,7 +1,13 @@
 import { Request, Response, NextFunction } from 'express';
 import { prisma } from '../config/db';
 import bcrypt from 'bcrypt';
-import { generateToken } from '../utils/jwt';
+
+// Importe les nouvelles fonctions Access/Refresh
+import {
+  generateAccessToken,
+  generateRefreshToken,
+  verifyRefreshToken,
+} from '../utils/jwt';
 
 /**
  * Récupère le profil utilisateur avec son foyer actif
@@ -87,6 +93,7 @@ export const updateUserProfile = async (req: Request, res: Response, next: NextF
 
 /**
  * Inscription d'un nouvel utilisateur
+ * => On peut renvoyer directement les tokens si on veut auto-connecter l'utilisateur
  */
 export const register = async (req: Request, res: Response, next: NextFunction) => {
   try {
@@ -113,8 +120,14 @@ export const register = async (req: Request, res: Response, next: NextFunction) 
       },
     });
 
+    // Générer un accessToken (ex. 15m) et un refreshToken (ex. 7j)
+    const accessToken = generateAccessToken({ userId: newUser.id });
+    const refreshToken = generateRefreshToken({ userId: newUser.id });
+
     return res.status(201).json({
       message: 'Utilisateur créé avec succès',
+      accessToken,
+      refreshToken,
       user: {
         id: newUser.id,
         name: newUser.name,
@@ -130,7 +143,7 @@ export const register = async (req: Request, res: Response, next: NextFunction) 
 };
 
 /**
- * Connexion d'un utilisateur avec inclusion des foyers
+ * Connexion d'un utilisateur (avec inclusion des foyers)
  */
 export const login = async (req: Request, res: Response, next: NextFunction) => {
   try {
@@ -153,11 +166,13 @@ export const login = async (req: Request, res: Response, next: NextFunction) => 
       return res.status(401).json({ message: 'Identifiants invalides' });
     }
 
+    // Vérifier le mot de passe haché
     const isMatch = await bcrypt.compare(password, user.password);
     if (!isMatch) {
       return res.status(401).json({ message: 'Identifiants invalides' });
     }
 
+    // Mettre à jour éventuellement le pushToken
     if (pushToken) {
       await prisma.user.update({
         where: { id: user.id },
@@ -165,13 +180,16 @@ export const login = async (req: Request, res: Response, next: NextFunction) => 
       });
     }
 
-    const token = generateToken({ userId: user.id });
+    // Génération d'un access token et d'un refresh token
+    const accessToken = generateAccessToken({ userId: user.id });
+    const refreshToken = generateRefreshToken({ userId: user.id });
 
     const foyers = user.foyers.map((uf) => uf.foyer);
 
     return res.status(200).json({
       message: 'Connexion réussie',
-      token,
+      accessToken,
+      refreshToken,
       user: {
         id: user.id,
         name: user.name,
@@ -184,5 +202,42 @@ export const login = async (req: Request, res: Response, next: NextFunction) => 
   } catch (error) {
     console.error('[login] Erreur :', error);
     next(error);
+  }
+};
+
+/**
+ * Rafraîchir un access token à partir du refresh token
+ * => Le frontend appelle /api/auth/refresh avec { refreshToken }
+ */
+export const refreshAccessToken = async (req: Request, res: Response) => {
+  try {
+    const { refreshToken } = req.body;
+    if (!refreshToken) {
+      return res.status(400).json({ message: 'Refresh token manquant' });
+    }
+
+    // Vérifie la validité du refresh token
+    const decoded = verifyRefreshToken(refreshToken);
+    if (!decoded || !decoded.userId) {
+      return res.status(401).json({ message: 'Refresh token invalide ou expiré' });
+    }
+
+    // Vérifie que l'utilisateur existe
+    const user = await prisma.user.findUnique({ where: { id: decoded.userId } });
+    if (!user) {
+      return res.status(404).json({ message: 'Utilisateur non trouvé' });
+    }
+
+    // Génère un nouveau access token et un nouveau refresh token si tu veux prolonger la session
+    const newAccessToken = generateAccessToken({ userId: user.id });
+    const newRefreshToken = generateRefreshToken({ userId: user.id });
+
+    return res.status(200).json({
+      accessToken: newAccessToken,
+      refreshToken: newRefreshToken,
+    });
+  } catch (error) {
+    console.error('[refreshAccessToken] Erreur :', error);
+    return res.status(401).json({ message: 'Impossible de rafraîchir le token' });
   }
 };
