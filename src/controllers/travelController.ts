@@ -1,21 +1,26 @@
 import { Request, Response, NextFunction } from 'express';
 import {
-  createTravelIdea,
-  getAllTravelIdeas,
-  getTravelIdeaById,
-  updateTravelIdea,
-  deleteTravelIdea,
-  voteForTravelIdea,
-} from '../services/travelService';
+  createTask,
+  getTasksByFoyer,
+  getTaskById,
+  updateTask,
+  deleteTask,
+} from '../services/taskService';
 import { prisma } from '../config/db';
 import { sendPushNotification } from '../utils/notifications';
 
+interface CustomRequest extends Request {
+  userId?: string;
+}
+
 /**
- * Récupère la pivot (UserFoyer) du user pour obtenir (entre autres) foyerId + userName.
- * Retourne null si pas de pivot => user n'est dans aucun foyer.
+ * Récupère l'enregistrement pivot UserFoyer pour un user,
+ * incluant son nom et le foyerId.
+ * Retourne null si le user n'appartient à aucun foyer.
  */
 async function getUserPivot(userId: string) {
   if (!userId) return null;
+
   return prisma.userFoyer.findFirst({
     where: { userId },
     include: {
@@ -27,7 +32,7 @@ async function getUserPivot(userId: string) {
 }
 
 /**
- * Récupère tous les pushTokens des membres d'un foyer, via UserFoyer.
+ * Récupère tous les pushTokens des membres d'un foyer.
  */
 async function getFoyerMembersPushTokens(foyerId: string): Promise<string[]> {
   const userFoyerRecords = await prisma.userFoyer.findMany({
@@ -45,186 +50,205 @@ async function getFoyerMembersPushTokens(foyerId: string): Promise<string[]> {
 }
 
 /**
- * 1) Création d'une nouvelle idée de voyage
+ * Contrôleur pour créer une nouvelle tâche
  */
-export async function createTravelIdeaController(req: Request, res: Response, next: NextFunction) {
+export async function createTaskController(
+  req: CustomRequest,
+  res: Response,
+  next: NextFunction
+) {
   try {
-    const userId = (req as any).userId as string;
+    const userId = req.userId;
     if (!userId) {
       return res.status(401).json({ message: 'Authentification requise.' });
     }
 
-    // Récupérer le foyerId de l'utilisateur via pivot
     const userPivot = await getUserPivot(userId);
     if (!userPivot) {
       return res
         .status(403)
-        .json({ message: 'Vous devez appartenir à un foyer pour proposer une idée de voyage.' });
+        .json({ message: 'Vous devez appartenir à un foyer pour créer une tâche.' });
     }
 
-    const { title, description, location } = req.body;
+    const { title, description, assignedToId, points } = req.body;
 
-    // Création de l'idée de voyage
-    const idea = await createTravelIdea({
+    if (!title) {
+      return res.status(400).json({ message: 'Le titre de la tâche est obligatoire.' });
+    }
+
+    const task = await createTask({
       title,
       description,
-      location,
       foyerId: userPivot.foyerId,
-      creatorId: userId,
+      assignedToId,
+      points,
     });
 
-    // Notifications push pour informer les membres
     const pushTokens = await getFoyerMembersPushTokens(userPivot.foyerId);
-    const userName = userPivot.user?.name || 'Quelqu’un';
+    const creatorName = userPivot.user?.name || 'Quelqu\'un';
 
     for (const token of pushTokens) {
       await sendPushNotification(
         token,
-        `${userName} a proposé une nouvelle idée de voyage : "${title}".`
+        `${creatorName} a créé une nouvelle tâche : "${title}".`
       );
     }
 
-    return res.status(201).json({
-      message: 'Idée de voyage créée avec succès.',
-      idea,
-    });
+    return res.status(201).json({ message: 'Tâche créée avec succès', task });
   } catch (error) {
+    console.error('[createTaskController] Erreur :', error);
     next(error);
   }
 }
 
 /**
- * 2) Récupération de toutes les idées de voyage d'un foyer
+ * Contrôleur pour récupérer les tâches du foyer
  */
-export async function getAllTravelIdeasController(req: Request, res: Response, next: NextFunction) {
+export async function getTasksController(
+  req: CustomRequest,
+  res: Response,
+  next: NextFunction
+) {
   try {
-    const userId = (req as any).userId as string;
+    const userId = req.userId;
     if (!userId) {
       return res.status(401).json({ message: 'Authentification requise.' });
     }
 
     const userPivot = await getUserPivot(userId);
     if (!userPivot) {
-      return res.status(403).json({ message: 'Accès refusé : pas de foyer.' });
+      return res
+        .status(403)
+        .json({ message: 'Accès refusé : vous n’appartenez à aucun foyer.' });
     }
 
-    // Tri par votes si ?sortByVotes=true
-    const sortByVotes = req.query.sortByVotes === 'true';
+    const completed =
+      req.query.completed === 'true'
+        ? true
+        : req.query.completed === 'false'
+        ? false
+        : undefined;
 
-    const ideas = await getAllTravelIdeas(userPivot.foyerId, sortByVotes);
-    return res.status(200).json(ideas);
+    const tasks = await getTasksByFoyer(userPivot.foyerId, completed);
+    return res.status(200).json(tasks);
   } catch (error) {
+    console.error('[getTasksController] Erreur :', error);
     next(error);
   }
 }
 
 /**
- * 3) Récupération d'une idée de voyage par ID
+ * Contrôleur pour récupérer une tâche par ID
  */
-export async function getTravelIdeaByIdController(req: Request, res: Response, next: NextFunction) {
+export async function getTaskByIdController(
+  req: Request,
+  res: Response,
+  next: NextFunction
+) {
   try {
-    const ideaId = req.params.ideaId;
-    const idea = await getTravelIdeaById(ideaId);
+    const taskId = req.params.taskId;
 
-    if (!idea) {
-      return res.status(404).json({ message: 'Idée introuvable.' });
+    const task = await getTaskById(taskId);
+    if (!task) {
+      return res.status(404).json({ message: 'Tâche introuvable.' });
     }
 
-    return res.status(200).json(idea);
+    return res.status(200).json(task);
   } catch (error) {
+    console.error('[getTaskByIdController] Erreur :', error);
     next(error);
   }
 }
 
 /**
- * 4) Mise à jour d'une idée de voyage
+ * Contrôleur pour mettre à jour une tâche
  */
-export async function updateTravelIdeaController(req: Request, res: Response, next: NextFunction) {
+export async function updateTaskController(
+  req: CustomRequest,
+  res: Response,
+  next: NextFunction
+) {
   try {
-    const ideaId = req.params.ideaId;
-    const { title, description, location } = req.body;
+    const taskId = req.params.taskId;
+    const { title, description, completed, points, assignedToId } = req.body;
 
-    // Mise à jour
-    const updated = await updateTravelIdea({ ideaId, title, description, location });
-
-    // On récupère l'idée pour notifier le foyer
-    const idea = await prisma.travelIdea.findUnique({
-      where: { id: ideaId },
-      select: { foyerId: true, title: true },
+    const updatedTask = await updateTask({
+      taskId,
+      title,
+      description,
+      completed,
+      points,
+      assignedToId,
     });
 
-    if (idea) {
-      const pushTokens = await getFoyerMembersPushTokens(idea.foyerId);
-      for (const token of pushTokens) {
-        await sendPushNotification(
-          token,
-          `L'idée de voyage "${idea.title}" a été mise à jour.`
-        );
+    // Si la tâche vient d'être marquée comme complétée, ajouter un événement au calendrier
+    if (completed && updatedTask.completedAt) {
+      const task = await prisma.task.findUnique({
+        where: { id: taskId },
+        select: { foyerId: true, title: true },
+      });
+
+      if (task) {
+        await prisma.calendarEvent.create({
+          data: {
+            title: `Tâche complétée : ${task.title}`,
+            description: `La tâche "${task.title}" a été complétée.`,
+            startDate: new Date(),
+            endDate: new Date(),
+            foyerId: task.foyerId,
+            creatorId: req.userId, // Optionnel : ajouter le créateur
+          },
+        });
+
+        // Notification aux membres du foyer
+        const pushTokens = await getFoyerMembersPushTokens(task.foyerId);
+        for (const token of pushTokens) {
+          await sendPushNotification(
+            token,
+            `La tâche "${task.title}" a été marquée comme complétée.`
+          );
+        }
       }
     }
 
-    return res.status(200).json({
-      message: 'Idée de voyage mise à jour.',
-      idea: updated,
-    });
+    return res.status(200).json({ message: 'Tâche mise à jour.', task: updatedTask });
   } catch (error) {
+    console.error('[updateTaskController] Erreur :', error);
     next(error);
   }
 }
 
 /**
- * 5) Suppression d'une idée de voyage
+ * Contrôleur pour supprimer une tâche
  */
-export async function deleteTravelIdeaController(req: Request, res: Response, next: NextFunction) {
+export async function deleteTaskController(
+  req: Request,
+  res: Response,
+  next: NextFunction
+) {
   try {
-    const ideaId = req.params.ideaId;
+    const taskId = req.params.taskId;
 
-    // Récupération de l'idée avant suppression
-    const idea = await prisma.travelIdea.findUnique({
-      where: { id: ideaId },
-      select: { foyerId: true, title: true },
+    const task = await prisma.task.findUnique({
+      where: { id: taskId },
+      select: { title: true, foyerId: true },
     });
-
-    if (!idea) {
+    if (!task) {
       return res
         .status(404)
-        .json({ message: 'Idée introuvable ou déjà supprimée.' });
+        .json({ message: 'Tâche introuvable ou déjà supprimée.' });
     }
 
-    // Suppression
-    const deleted = await deleteTravelIdea(ideaId);
+    const deletedTask = await deleteTask(taskId);
 
-    // Notifications aux membres
-    const pushTokens = await getFoyerMembersPushTokens(idea.foyerId);
+    const pushTokens = await getFoyerMembersPushTokens(task.foyerId);
     for (const token of pushTokens) {
-      await sendPushNotification(
-        token,
-        `L'idée de voyage "${idea.title}" a été supprimée.`
-      );
+      await sendPushNotification(token, `La tâche "${task.title}" a été supprimée.`);
     }
 
-    return res.status(200).json({
-      message: 'Idée de voyage supprimée.',
-      idea: deleted,
-    });
+    return res.status(200).json({ message: 'Tâche supprimée.', task: deletedTask });
   } catch (error) {
-    next(error);
-  }
-}
-
-/**
- * 6) Vote pour une idée de voyage
- */
-export async function voteForTravelIdeaController(req: Request, res: Response, next: NextFunction) {
-  try {
-    const ideaId = req.params.ideaId;
-
-    const updated = await voteForTravelIdea(ideaId);
-    return res.status(200).json({
-      message: 'Vote enregistré.',
-      idea: updated,
-    });
-  } catch (error) {
+    console.error('[deleteTaskController] Erreur :', error);
     next(error);
   }
 }
