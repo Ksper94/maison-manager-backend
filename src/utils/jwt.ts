@@ -2,19 +2,23 @@ import jwt, { JwtPayload } from 'jsonwebtoken';
 import { config } from '../config/env';
 
 interface CustomJwtPayload extends JwtPayload {
-  userId: string; // Ajout d'un champ personnalisé pour ton application
+  userId: string; // Identifiant unique de l'utilisateur
 }
 
 /**
- * Générer un Access Token (ex: 15 minutes)
+ * Génère un Access Token valide pendant 15 minutes
+ * @param payload - Les données à inclure dans le token (ex. userId)
+ * @returns Le token JWT signé
  */
 export const generateAccessToken = (payload: { userId: string }): string => {
-  // Tu peux changer '15m' en '1h' ou autre selon tes besoins
   return jwt.sign(payload, config.JWT_SECRET, { expiresIn: '15m' });
 };
 
 /**
- * Vérifier l'Access Token
+ * Vérifie la validité d'un Access Token
+ * @param token - Le token à vérifier
+ * @returns Le payload décodé
+ * @throws Error si le token est invalide ou expiré
  */
 export const verifyAccessToken = (token: string): CustomJwtPayload => {
   try {
@@ -30,14 +34,19 @@ export const verifyAccessToken = (token: string): CustomJwtPayload => {
 };
 
 /**
- * Générer un Refresh Token (ex: 7 jours)
+ * Génère un Refresh Token valide pendant 7 jours
+ * @param payload - Les données à inclure dans le token (ex. userId)
+ * @returns Le token JWT signé
  */
 export const generateRefreshToken = (payload: { userId: string }): string => {
   return jwt.sign(payload, config.JWT_REFRESH_SECRET, { expiresIn: '7d' });
 };
 
 /**
- * Vérifier le Refresh Token
+ * Vérifie la validité d'un Refresh Token
+ * @param token - Le token à vérifier
+ * @returns Le payload décodé
+ * @throws Error si le token est invalide ou expiré
  */
 export const verifyRefreshToken = (token: string): CustomJwtPayload => {
   try {
