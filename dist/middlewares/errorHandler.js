@@ -2,9 +2,11 @@
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.errorHandler = errorHandler;
 function errorHandler(err, req, res, next) {
-    console.error(err);
-    return res.status(500).json({
-        message: 'Une erreur interne est survenue',
-        error: err.message || err
+    console.error(err.stack);
+    const statusCode = err.statusCode || 500;
+    const message = err.message || 'Une erreur interne est survenue';
+    res.status(statusCode).json({
+        message: message,
+        error: process.env.NODE_ENV === 'production' ? {} : err
     });
 }

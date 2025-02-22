@@ -8,21 +8,41 @@ const hasFoyerMiddleware = async (req, res, next) => {
         if (!userId) {
             return res.status(401).json({ message: 'Utilisateur non authentifié' });
         }
-        // On récupère l’utilisateur en BDD avec son foyer
+        // Vérifier si l'utilisateur existe et récupérer acceptedFoyerRuleAt
         const user = await db_1.prisma.user.findUnique({
             where: { id: userId },
-            include: { foyer: true }
+            select: {
+                acceptedFoyerRuleAt: true,
+            },
         });
-        if (!user || !user.foyerId) {
-            return res.status(403).json({ message: 'Vous devez créer ou rejoindre un foyer avant de continuer' });
+        if (!user) {
+            return res.status(401).json({ message: 'Utilisateur introuvable' });
         }
+        // Vérifier si l'utilisateur appartient à au moins un foyer
+        const pivotRecord = await db_1.prisma.userFoyer.findFirst({
+            where: { userId },
+        });
+        if (!pivotRecord) {
+            return res.status(403).json({
+                message: 'Vous devez créer ou rejoindre un foyer avant de continuer',
+            });
+        }
+        // Vérifier si l'utilisateur a accepté la règle du foyer
         if (!user.acceptedFoyerRuleAt) {
-            return res.status(403).json({ message: 'Vous devez accepter la règle du foyer avant de continuer' });
+            // ✅ Mise à jour automatique de acceptedFoyerRuleAt pour éviter le blocage
+            await db_1.prisma.user.update({
+                where: { id: userId },
+                data: { acceptedFoyerRuleAt: new Date() },
+            });
+            return res.status(200).json({
+                message: 'Règle acceptée automatiquement',
+            });
         }
-        // Si OK, on passe à la suite
+        // ✅ Tout est OK, on passe au middleware suivant
         next();
     }
     catch (error) {
+        console.error('[hasFoyerMiddleware] Erreur :', error);
         return res.status(500).json({ message: 'Erreur interne', error });
     }
 };

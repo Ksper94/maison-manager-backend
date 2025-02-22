@@ -1,145 +1,216 @@
 "use strict";
-// src/services/calendarService.ts
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.createCalendarEvent = createCalendarEvent;
+exports.createPlanningEvent = createPlanningEvent;
 exports.getCalendarEvents = getCalendarEvents;
 exports.getCalendarEventById = getCalendarEventById;
 exports.updateCalendarEvent = updateCalendarEvent;
 exports.deleteCalendarEvent = deleteCalendarEvent;
 const db_1 = require("../config/db");
-/**
- * Crée un nouvel événement dans un foyer.
- * - Vérifie que la date de début est antérieure à la date de fin
- * - Optionnel : on peut vérifier le chevauchement avec d'autres événements
- */
+/* =================================================== */
+/*                 Fonctions de base                   */
+/* =================================================== */
 async function createCalendarEvent(data) {
-    const { title, description, startDate, endDate, foyerId, creatorId } = data;
-    // 1. Vérification des dates
-    if (startDate >= endDate) {
-        throw new Error('La date de fin doit être postérieure à la date de début.');
+    const { title, description, startDate, endDate, recurrence, foyerId, creatorId } = data;
+    // Validation basique
+    if (recurrence !== 'none' && startDate > endDate) {
+        throw new Error('La date de fin doit être postérieure à la date de début pour les événements récurrents.');
     }
-    // 2. (Optionnel) Vérifier si on autorise le chevauchement d’événements
-    //    Par exemple, on peut interdire la création si ça chevauche déjà un autre event
-    //    Dans ce cas, on effectue un findMany(...) avec un where sur la plage de dates
-    //    Par exemple :
-    // const overlapping = await prisma.calendarEvent.findMany({
-    //   where: {
-    //     foyerId: foyerId,
-    //     OR: [
-    //       {
-    //         startDate: { lte: endDate },
-    //         endDate: { gte: startDate }
-    //       }
-    //     ]
-    //   }
-    // });
-    // if (overlapping.length > 0) {
-    //   throw new Error('Un événement existe déjà sur la plage sélectionnée.');
-    // }
-    // 3. Créer l'événement dans la BDD
-    const newEvent = await db_1.prisma.calendarEvent.create({
+    else if (recurrence === 'none' && startDate >= endDate) {
+        throw new Error('La date de fin doit être strictement postérieure à la date de début pour les événements non récurrents.');
+    }
+    return db_1.prisma.calendarEvent.create({
         data: {
             title,
             description,
             startDate,
             endDate,
+            recurrence,
             foyerId,
             creatorId,
         },
     });
-    return newEvent;
 }
 /**
- * Récupère tous les événements d'un foyer, potentiellement filtrés par plage [from, to].
- * - Si from & to sont fournis, on récupère les événements qui se chevauchent
- *   avec [from, to].
- * - Sinon, on récupère tous les événements du foyer.
+ * Crée un planning à partir d'un format personnalisé (weekly, monthly ou monthlyOneOff).
+ * On décompose chaque jour choisi en un événement distinct.
  */
-async function getCalendarEvents(foyerId, from, to) {
-    // On construit un whereClause dynamique
-    const whereClause = {
-        foyerId,
-    };
-    // Si from et to sont définis, filtrer par chevauchement
-    if (from && to) {
-        whereClause.OR = [
-            {
-                startDate: { lte: to },
-                endDate: { gte: from }
+async function createPlanningEvent(data) {
+    console.log('[createPlanningEvent] Données reçues :', data);
+    const events = [];
+    if (data.recurrence === 'monthly' || data.recurrence === 'monthlyOneOff') {
+        if (!data.month || !data.year) {
+            throw new Error('Pour un planning mensuel, les champs month et year sont requis.');
+        }
+        for (const dayStr in data.schedule) {
+            const day = parseInt(dayStr, 10);
+            const { start, end } = data.schedule[dayStr]; // ex: start="09:00", end="18:00"
+            // On parse manuellement les heures/minutes
+            const [startH, startM] = start.split(':').map((v) => parseInt(v, 10));
+            const [endH, endM] = end.split(':').map((v) => parseInt(v, 10));
+            // Construction des dates : année/mois/jour + heure/minute
+            const startDate = new Date(data.year, data.month - 1, day, startH, startM, 0);
+            const endDate = new Date(data.year, data.month - 1, day, endH, endM, 0);
+            console.log(`[createPlanningEvent] Jour ${day} => start=${startDate.toISOString()}, end=${endDate.toISOString()}`);
+            if (startDate >= endDate) {
+                throw new Error(`La date de fin doit être postérieure à la date de début pour le jour ${day}`);
             }
-        ];
+            // monthlyOneOff => on enregistre "none" (événement ponctuel)
+            const eventRecurrence = data.recurrence === 'monthlyOneOff' ? 'none' : 'monthly';
+            const event = await db_1.prisma.calendarEvent.create({
+                data: {
+                    title: data.title,
+                    description: `Planning mensuel pour le jour ${day}`,
+                    startDate,
+                    endDate,
+                    recurrence: eventRecurrence,
+                    foyerId: data.foyerId,
+                    creatorId: data.creatorId,
+                },
+            });
+            events.push(event);
+        }
     }
-    // Tri par date de début ascendante
-    const events = await db_1.prisma.calendarEvent.findMany({
-        where: whereClause,
-        orderBy: { startDate: 'asc' }
-    });
+    else if (data.recurrence === 'weekly') {
+        const dayOfWeekMapping = {
+            monday: 1,
+            tuesday: 2,
+            wednesday: 3,
+            thursday: 4,
+            friday: 5,
+            saturday: 6,
+            sunday: 0,
+        };
+        for (const dayKey in data.schedule) {
+            const { start, end } = data.schedule[dayKey];
+            const targetDay = dayOfWeekMapping[dayKey.toLowerCase()];
+            if (targetDay === undefined) {
+                throw new Error(`Jour invalide: ${dayKey}`);
+            }
+            // On parse manuellement "HH:MM"
+            const [startH, startM] = start.split(':').map((v) => parseInt(v, 10));
+            const [endH, endM] = end.split(':').map((v) => parseInt(v, 10));
+            // On trouve la prochaine occurrence de ce jour
+            const baseDate = new Date();
+            const currentDay = baseDate.getDay(); // 0 (dim) -> 6 (sam)
+            let daysToAdd = targetDay - currentDay;
+            if (daysToAdd < 0)
+                daysToAdd += 7;
+            if (daysToAdd === 0) {
+                // Si on est déjà le bon jour, on vérifie si on doit le "pousser" à la semaine prochaine
+                // selon votre logique. Ici, on considère qu'on peut l'ajouter pour aujourd'hui si l'heure n'est pas déjà passée.
+            }
+            const eventDateBase = new Date(baseDate);
+            eventDateBase.setDate(baseDate.getDate() + daysToAdd);
+            // Construction de la date
+            const startDate = new Date(eventDateBase.getFullYear(), eventDateBase.getMonth(), eventDateBase.getDate(), startH, startM, 0);
+            const endDate = new Date(eventDateBase.getFullYear(), eventDateBase.getMonth(), eventDateBase.getDate(), endH, endM, 0);
+            if (startDate >= endDate) {
+                throw new Error(`La date de fin doit être postérieure à la date de début pour ${dayKey}`);
+            }
+            const event = await db_1.prisma.calendarEvent.create({
+                data: {
+                    title: data.title,
+                    description: `Planning hebdomadaire pour ${dayKey}`,
+                    startDate,
+                    endDate,
+                    recurrence: 'weekly',
+                    foyerId: data.foyerId,
+                    creatorId: data.creatorId,
+                },
+            });
+            events.push(event);
+        }
+    }
+    else {
+        throw new Error('Type de planning non supporté (must be weekly, monthly, or monthlyOneOff).');
+    }
+    console.log('[createPlanningEvent] Tous les événements créés :', events);
     return events;
 }
 /**
- * Récupère un événement précis (via son ID).
- * - @param eventId
+ * Récupération de tous les events d'un foyer
  */
-async function getCalendarEventById(eventId) {
-    const event = await db_1.prisma.calendarEvent.findUnique({
-        where: { id: eventId }
-    });
-    return event;
-}
-/**
- * Met à jour un événement existant.
- * - Vérifie si la nouvelle date de fin est bien après la date de début.
- * - Optionnel : vérifier que l'utilisateur a le droit de modifier.
- */
-async function updateCalendarEvent(data) {
-    const { eventId, title, description, startDate, endDate, updaterId } = data;
-    // 1. Récupérer l'événement pour vérifier la cohérence
-    const existingEvent = await db_1.prisma.calendarEvent.findUnique({
-        where: { id: eventId }
-    });
-    if (!existingEvent) {
-        throw new Error('Événement introuvable.');
+async function getCalendarEvents(foyerId, from, to) {
+    const whereClause = { foyerId };
+    if (from && to) {
+        whereClause.AND = [
+            {
+                OR: [
+                    { startDate: { gte: from, lte: to } },
+                    { endDate: { gte: from, lte: to } },
+                    { startDate: { lte: from }, endDate: { gte: to } },
+                ],
+            },
+        ];
     }
-    // 2. Vérifier que la personne qui met à jour est le créateur
-    //    (si c'est ta règle métier)
-    // if (updaterId && existingEvent.creatorId && existingEvent.creatorId !== updaterId) {
-    //   throw new Error('Vous ne pouvez pas modifier cet événement car vous ne l’avez pas créé.');
-    // }
-    // 3. Vérification date start/end
+    const events = await db_1.prisma.calendarEvent.findMany({
+        where: whereClause,
+        orderBy: { startDate: 'asc' },
+        take: 1000,
+    });
+    return events.map((event) => {
+        if (event.recurrence === 'none')
+            return event;
+        // Sinon, générer occurrences récurrentes => ex: daily, weekly, monthly
+        return generateRecurringEvents(event, from, to);
+    }).flat();
+}
+async function getCalendarEventById(eventId) {
+    return db_1.prisma.calendarEvent.findUnique({ where: { id: eventId } });
+}
+async function updateCalendarEvent(data) {
+    const { eventId, title, description, startDate, endDate, recurrence } = data;
     if (startDate && endDate && startDate >= endDate) {
         throw new Error('La date de fin doit être postérieure à la date de début.');
     }
-    // 4. Mettre à jour
-    const updatedEvent = await db_1.prisma.calendarEvent.update({
+    return db_1.prisma.calendarEvent.update({
         where: { id: eventId },
-        data: {
-            title,
-            description,
-            startDate,
-            endDate
-        }
+        data: { title, description, startDate, endDate, recurrence },
     });
-    return updatedEvent;
+}
+async function deleteCalendarEvent(eventId) {
+    return db_1.prisma.calendarEvent.delete({ where: { id: eventId } });
 }
 /**
- * Supprime un événement donné.
- * - Optionnel : vérifier que le user qui supprime est le créateur.
+ * Génère les occurrences récurrentes (daily, weekly, monthly, yearly).
+ * On peut affiner la logique si besoin (ex: stopper après X occurrences).
  */
-async function deleteCalendarEvent(eventId, userId) {
-    // 1. Récupérer l'événement
-    const existingEvent = await db_1.prisma.calendarEvent.findUnique({
-        where: { id: eventId }
-    });
-    if (!existingEvent) {
-        throw new Error('Événement introuvable.');
+function generateRecurringEvents(event, from, to) {
+    const recurringEvents = [];
+    let currentDate = new Date(event.startDate);
+    const MAX_OCC = 500;
+    let count = 0;
+    while ((!to || currentDate <= to) && count < MAX_OCC) {
+        if (!from || currentDate >= from) {
+            // On clone l'event en modifiant startDate/endDate
+            const offset = new Date(event.endDate).getTime() - new Date(event.startDate).getTime();
+            const newStart = new Date(currentDate);
+            const newEnd = new Date(currentDate.getTime() + offset);
+            recurringEvents.push({
+                ...event,
+                startDate: newStart,
+                endDate: newEnd,
+            });
+            count++;
+        }
+        switch (event.recurrence) {
+            case 'daily':
+                currentDate.setDate(currentDate.getDate() + 1);
+                break;
+            case 'weekly':
+                currentDate.setDate(currentDate.getDate() + 7);
+                break;
+            case 'monthly':
+                currentDate.setMonth(currentDate.getMonth() + 1);
+                break;
+            case 'yearly':
+                currentDate.setFullYear(currentDate.getFullYear() + 1);
+                break;
+            default:
+                // 'none' ou non supporté
+                return recurringEvents;
+        }
     }
-    // 2. Vérifier que le userId correspond au creatorId, si ta logique l’exige
-    // if (userId && existingEvent.creatorId && existingEvent.creatorId !== userId) {
-    //   throw new Error('Vous ne pouvez pas supprimer cet événement car vous ne l’avez pas créé.');
-    // }
-    // 3. Supprimer l'événement
-    const deletedEvent = await db_1.prisma.calendarEvent.delete({
-        where: { id: eventId }
-    });
-    return deletedEvent;
+    return recurringEvents;
 }

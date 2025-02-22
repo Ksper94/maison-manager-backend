@@ -6,13 +6,13 @@ exports.getRecipeById = getRecipeById;
 exports.updateRecipe = updateRecipe;
 exports.deleteRecipe = deleteRecipe;
 exports.voteForRecipe = voteForRecipe;
-// src/services/recipeService.ts
 const db_1 = require("../config/db");
 async function createRecipe(data) {
     const { title, description, ingredients, instructions, foyerId, creatorId } = data;
     if (!title) {
         throw new Error('Le titre de la recette est obligatoire.');
     }
+    // Création en base de la recette
     const newRecipe = await db_1.prisma.recipe.create({
         data: {
             title,
@@ -25,8 +25,12 @@ async function createRecipe(data) {
     });
     return newRecipe;
 }
+/**
+ * Récupère toutes les recettes d’un foyer,
+ * avec la possibilité de trier par nombre de votes.
+ */
 async function getAllRecipes(foyerId, sortByVotes = false) {
-    // Ajout de "as const" pour que TypeScript reconnaisse la valeur littérale 'desc'
+    // On définit l'ordre de tri
     const orderByClause = sortByVotes
         ? { votes: 'desc' }
         : { createdAt: 'desc' };
@@ -41,6 +45,10 @@ async function getAllRecipes(foyerId, sortByVotes = false) {
     });
     return recipes;
 }
+/**
+ * Récupère une recette par son ID,
+ * en incluant son créateur si défini.
+ */
 async function getRecipeById(recipeId) {
     const recipe = await db_1.prisma.recipe.findUnique({
         where: { id: recipeId },
@@ -50,14 +58,19 @@ async function getRecipeById(recipeId) {
     });
     return recipe;
 }
+/**
+ * Met à jour une recette existante.
+ */
 async function updateRecipe(data) {
     const { recipeId, title, description, ingredients, instructions } = data;
+    // Vérifie l'existence de la recette
     const existing = await db_1.prisma.recipe.findUnique({
         where: { id: recipeId },
     });
     if (!existing) {
         throw new Error('Recette introuvable.');
     }
+    // Mise à jour
     const updated = await db_1.prisma.recipe.update({
         where: { id: recipeId },
         data: {
@@ -69,6 +82,9 @@ async function updateRecipe(data) {
     });
     return updated;
 }
+/**
+ * Supprime une recette par ID.
+ */
 async function deleteRecipe(recipeId) {
     const existing = await db_1.prisma.recipe.findUnique({
         where: { id: recipeId },
@@ -82,7 +98,7 @@ async function deleteRecipe(recipeId) {
     return deleted;
 }
 /**
- * Vote (like) pour la recette : on incrémente le champ votes de +1.
+ * Incrémente de 1 le champ `votes` de la recette.
  */
 async function voteForRecipe(recipeId) {
     const existing = await db_1.prisma.recipe.findUnique({

@@ -1,6 +1,6 @@
 // src/services/userService.ts
 import { prisma } from '../config/db';
-import { JsonValue } from '@prisma/client'; // Importation de JsonValue pour typage correct des champs JSON
+import { Prisma } from '@prisma/client'; // Importation de Prisma pour les types internes
 
 // Type représentant le profil utilisateur avec ses foyers
 type UserProfile = {
@@ -12,7 +12,7 @@ type UserProfile = {
     id: string;
     name: string;
     code: string;
-    rule: JsonValue; // Utilisation de JsonValue pour représenter un champ JSON
+    rule: Prisma.JsonValue; // Utilisation de Prisma.JsonValue
     createdAt: Date;
     updatedAt: Date;
   }[];
@@ -26,24 +26,21 @@ type UserProfile = {
  */
 export async function getUserProfile(userId: string): Promise<UserProfile> {
   try {
-    // Requête Prisma pour récupérer l'utilisateur et ses foyers associés
     const user = await prisma.user.findUnique({
       where: { id: userId },
       include: {
         foyers: {
           include: {
-            foyer: true, // Inclusion des détails du foyer
+            foyer: true,
           },
         },
       },
     });
 
-    // Vérification de l'existence de l'utilisateur
     if (!user) {
       throw new Error('Profil utilisateur non trouvé');
     }
 
-    // Formatage des données pour correspondre au type UserProfile
     return {
       id: user.id,
       name: user.name,
@@ -53,7 +50,7 @@ export async function getUserProfile(userId: string): Promise<UserProfile> {
         id: uf.foyer.id,
         name: uf.foyer.name,
         code: uf.foyer.code,
-        rule: uf.foyer.rule, // Typé comme JsonValue pour cohérence avec Prisma
+        rule: uf.foyer.rule, // Typé comme Prisma.JsonValue
         createdAt: uf.foyer.createdAt,
         updatedAt: uf.foyer.updatedAt,
       })),
@@ -74,34 +71,31 @@ export async function getUserFoyers(userId: string): Promise<{
   id: string;
   name: string;
   code: string;
-  rule: JsonValue; // Typage correct pour le champ JSON
+  rule: Prisma.JsonValue; // Utilisation de Prisma.JsonValue
   createdAt: Date;
   updatedAt: Date;
 }[]> {
   try {
-    // Requête Prisma pour récupérer l'utilisateur et ses foyers
     const user = await prisma.user.findUnique({
       where: { id: userId },
       include: {
         foyers: {
           include: {
-            foyer: true, // Inclusion des détails du foyer
+            foyer: true,
           },
         },
       },
     });
 
-    // Vérification de l'existence de l'utilisateur
     if (!user) {
       throw new Error('Utilisateur non trouvé');
     }
 
-    // Mapping des foyers pour renvoyer uniquement les données nécessaires
     return user.foyers.map((uf) => ({
       id: uf.foyer.id,
       name: uf.foyer.name,
       code: uf.foyer.code,
-      rule: uf.foyer.rule, // Typé comme JsonValue pour cohérence avec Prisma
+      rule: uf.foyer.rule, // Typé comme Prisma.JsonValue
       createdAt: uf.foyer.createdAt,
       updatedAt: uf.foyer.updatedAt,
     }));
