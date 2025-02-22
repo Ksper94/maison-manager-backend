@@ -7,6 +7,11 @@
     "strict": true,                             
     "esModuleInterop": true,                    
     "skipLibCheck": true,                       
-    "forceConsistentCasingInFileNames": true     
-  }
+    "forceConsistentCasingInFileNames": true,    
+    "baseUrl": "./src",                          // Simplifie les imports
+    "resolveJsonModule": true,                   // Supporte les imports JSON
+    "allowJs": true                              // Inclut les fichiers JS
+  },
+  "include": ["src"],                            // Inclut uniquement src
+  "exclude": ["node_modules", "dist"]            // Exclut les dossiers inutiles
 }
