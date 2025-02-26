@@ -9,33 +9,33 @@ generator client {
 
 // Modèle principal pour les foyers
 model Foyer {
-  id             String           @id @default(cuid())
-  name           String
-  code           String           @unique // Code unique pour rejoindre un foyer
-  rule           Json             // Règles du foyer sous forme d'objet JSON
-  createdAt      DateTime         @default(now())
-  updatedAt      DateTime         @updatedAt
+  id        String   @id @default(cuid())
+  name      String
+  code      String   @unique // Code unique pour rejoindre un foyer
+  rule      Json // Règles du foyer sous forme d'objet JSON
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
-  members        UserFoyer[]      // Relation avec les utilisateurs via la table pivot
-  calendarEvents CalendarEvent[]  // Événements liés au foyer
-  tasks          Task[]           // Tâches associées au foyer
-  shoppingItems  ShoppingItem[]   // Liste de courses du foyer
-  travelIdeas    TravelIdea[]     // Idées de voyage du foyer
-  recipes        Recipe[]         // Recettes associées au foyer
+  members        UserFoyer[] // Relation avec les utilisateurs via la table pivot
+  calendarEvents CalendarEvent[] // Événements liés au foyer
+  tasks          Task[] // Tâches associées au foyer
+  shoppingItems  ShoppingItem[] // Liste de courses du foyer
+  travelIdeas    TravelIdea[] // Idées de voyage du foyer
+  recipes        Recipe[] // Recettes associées au foyer
 }
 
 // Modèle pour les utilisateurs
 model User {
-  id                  String           @id @default(cuid())
-  name                String
-  email               String           @unique
-  password            String
-  avatar              String?          // URL ou chemin de l'avatar (facultatif)
-  createdAt           DateTime         @default(now())
-  updatedAt           DateTime         @updatedAt
+  id        String   @id @default(cuid())
+  name      String
+  email     String   @unique
+  password  String
+  avatar    String? // URL ou chemin de l'avatar (facultatif)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
-  foyers              UserFoyer[]      // Foyers auxquels l'utilisateur appartient
-  acceptedFoyerRuleAt DateTime?        // Date d'acceptation des règles (facultatif)
+  foyers              UserFoyer[] // Foyers auxquels l'utilisateur appartient
+  acceptedFoyerRuleAt DateTime? // Date d'acceptation des règles (facultatif)
   createdEvents       CalendarEvent[]  @relation("UserCreatorRelation")
   assignedTasks       Task[]           @relation("UserAssignedTasks")
   createdTravelIdeas  TravelIdea[]     @relation("TravelCreatorRelation")
@@ -43,8 +43,9 @@ model User {
   addedShoppings      ShoppingItem[]   @relation("UserAddedShopping")
   points              Int              @default(0) // Points pour gamification
   createdRecipes      Recipe[]         @relation("RecipeCreatorRelation")
-  pushToken           String?          // Token pour notifications push
+  pushToken           String? // Token pour notifications push
   travelVotes         TravelIdeaVote[] // Votes pour les idées de voyage
+  completedEvents     CalendarEvent[]  @relation("UserCompletedByRelation") // Nouveau champ pour la relation
 }
 
 // Table pivot pour la relation User-Foyer
@@ -60,87 +61,89 @@ model UserFoyer {
 
 // Modèle pour les tâches
 model Task {
-  id          String   @id @default(cuid())
+  id          String    @id @default(cuid())
   title       String
-  description String?  // Description optionnelle
-  completed   Boolean  @default(false)
+  description String? // Description optionnelle
+  completed   Boolean   @default(false)
   completedAt DateTime? // Date de complétion
-  points      Int      @default(0) // Points attribués
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  points      Int       @default(0) // Points attribués
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
 
-  foyerId     String
-  foyer       Foyer    @relation(fields: [foyerId], references: [id])
+  foyerId      String
+  foyer        Foyer   @relation(fields: [foyerId], references: [id])
   assignedToId String?
-  assignedTo   User?    @relation(fields: [assignedToId], references: [id], name: "UserAssignedTasks")
+  assignedTo   User?   @relation(fields: [assignedToId], references: [id], name: "UserAssignedTasks")
 }
 
 // Modèle pour les événements du calendrier
 model CalendarEvent {
   id          String   @id @default(cuid())
   title       String
-  description String?  // Description optionnelle
+  description String? // Description optionnelle
   startDate   DateTime
   endDate     DateTime
   recurrence  String   @default("none") // Récurrence : "none", "daily", "weekly", etc.
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
-  foyerId     String
-  foyer       Foyer    @relation(fields: [foyerId], references: [id])
-  creatorId   String?
-  creator     User?    @relation("UserCreatorRelation", fields: [creatorId], references: [id])
+  foyerId       String
+  foyer         Foyer   @relation(fields: [foyerId], references: [id])
+  creatorId     String?
+  creator       User?   @relation("UserCreatorRelation", fields: [creatorId], references: [id])
+  completedById String? // Relation pour l'utilisateur qui a complété la tâche
+  completedBy   User?   @relation("UserCompletedByRelation", fields: [completedById], references: [id])
 }
 
 // Modèle pour les articles de la liste de courses
 model ShoppingItem {
-  id         String   @id @default(cuid())
-  name       String
-  quantity   String?  // Quantité (ex. "2kg")
-  purchased  Boolean  @default(false)
-  createdAt  DateTime @default(now())
-  updatedAt  DateTime @updatedAt
+  id        String   @id @default(cuid())
+  name      String
+  quantity  String? // Quantité (ex. "2kg")
+  purchased Boolean  @default(false)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
-  foyerId    String
-  foyer      Foyer    @relation(fields: [foyerId], references: [id])
+  foyerId      String
+  foyer        Foyer   @relation(fields: [foyerId], references: [id])
   assignedToId String?
-  assignedTo   User?    @relation(fields: [assignedToId], references: [id], name: "UserAssignedShopping")
-  addedById String?
-  addedBy   User?    @relation(fields: [addedById], references: [id], name: "UserAddedShopping")
+  assignedTo   User?   @relation(fields: [assignedToId], references: [id], name: "UserAssignedShopping")
+  addedById    String?
+  addedBy      User?   @relation(fields: [addedById], references: [id], name: "UserAddedShopping")
 }
 
 // Modèle pour les idées de voyage
 model TravelIdea {
   id          String   @id @default(cuid())
   title       String
-  description String?  // Description optionnelle
-  location    String?  // Destination
+  description String? // Description optionnelle
+  location    String? // Destination
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
   votes       Int      @default(0) // Total des votes
 
-  foyerId     String
-  foyer       Foyer    @relation(fields: [foyerId], references: [id])
-  creatorId   String?
-  creator     User?    @relation(fields: [creatorId], references: [id], name: "TravelCreatorRelation")
-  votesList   TravelIdeaVote[] // Votes associés
+  foyerId   String
+  foyer     Foyer            @relation(fields: [foyerId], references: [id])
+  creatorId String?
+  creator   User?            @relation(fields: [creatorId], references: [id], name: "TravelCreatorRelation")
+  votesList TravelIdeaVote[] // Votes associés
 }
 
 // Modèle pour les recettes
 model Recipe {
   id           String   @id @default(cuid())
   title        String
-  description  String?  // Description optionnelle
-  ingredients  String?  // Liste des ingrédients
-  instructions String?  // Instructions
+  description  String? // Description optionnelle
+  ingredients  String? // Liste des ingrédients
+  instructions String? // Instructions
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
   votes        Int      @default(0) // Votes reçus
 
-  foyerId      String
-  foyer        Foyer    @relation(fields: [foyerId], references: [id])
-  creatorId    String?
-  creator      User?    @relation(fields: [creatorId], references: [id], name: "RecipeCreatorRelation")
+  foyerId   String
+  foyer     Foyer   @relation(fields: [foyerId], references: [id])
+  creatorId String?
+  creator   User?   @relation(fields: [creatorId], references: [id], name: "RecipeCreatorRelation")
 }
 
 // Votes pour les idées de voyage
@@ -150,8 +153,8 @@ model TravelIdeaVote {
   userId       String
   createdAt    DateTime @default(now())
 
-  travelIdea   TravelIdea @relation(fields: [travelIdeaId], references: [id])
-  user         User       @relation(fields: [userId], references: [id])
+  travelIdea TravelIdea @relation(fields: [travelIdeaId], references: [id])
+  user       User       @relation(fields: [userId], references: [id])
 
   @@unique([travelIdeaId, userId]) // Unicité des votes
 }

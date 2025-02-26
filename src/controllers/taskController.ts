@@ -21,8 +21,6 @@ interface CustomRequest extends Request {
 async function getUserPivot(userId: string) {
   if (!userId) return null;
 
-  // On inclut "user" pour récupérer le name, 
-  // mais on pourrait faire autrement si on veut plus d'infos
   return prisma.userFoyer.findFirst({
     where: { userId },
     include: {
@@ -65,7 +63,6 @@ export async function createTaskController(
       return res.status(401).json({ message: 'Authentification requise.' });
     }
 
-    // Récupère pivot => foyerId + userName
     const userPivot = await getUserPivot(userId);
     if (!userPivot) {
       return res
@@ -75,7 +72,6 @@ export async function createTaskController(
 
     const { title, description, assignedToId, points } = req.body;
 
-    // Création de la tâche dans la table "Task"
     const task = await createTask({
       title,
       description,
@@ -84,10 +80,7 @@ export async function createTaskController(
       points,
     });
 
-    // Notification aux membres du foyer
     const pushTokens = await getFoyerMembersPushTokens(userPivot.foyerId);
-
-    // userPivot.user contient { name: string }
     const creatorName = userPivot.user?.name || 'Quelqu\'un';
 
     for (const token of pushTokens) {
@@ -125,7 +118,6 @@ export async function getTasksController(
         .json({ message: 'Accès refusé : vous n’appartenez à aucun foyer.' });
     }
 
-    // Filtre par "completed" dans la querystring
     const completed =
       req.query.completed === 'true'
         ? true
@@ -168,13 +160,18 @@ export async function getTaskByIdController(
  * Contrôleur pour mettre à jour une tâche
  */
 export async function updateTaskController(
-  req: Request,
+  req: CustomRequest, // Changé de Request à CustomRequest pour accéder à userId
   res: Response,
   next: NextFunction
 ) {
   try {
+    const userId = req.userId;
     const taskId = req.params.taskId;
     const { title, description, completed, points, assignedToId } = req.body;
+
+    if (!userId) {
+      return res.status(401).json({ message: 'Authentification requise.' });
+    }
 
     // Mise à jour de la tâche
     const updatedTask = await updateTask({
@@ -186,19 +183,48 @@ export async function updateTaskController(
       assignedToId,
     });
 
-    // Si la tâche vient d'être marquée comme complétée, notifie le foyer
+    // Si la tâche vient d'être marquée comme complétée, créer un événement et notifier
     if (completed) {
       const task = await prisma.task.findUnique({
         where: { id: taskId },
-        select: { foyerId: true, title: true },
+        select: { title: true, foyerId: true },
       });
 
       if (task) {
+        // Récupérer les informations de l'utilisateur qui a complété la tâche
+        const completingUser = await prisma.user.findUnique({
+          where: { id: userId },
+          select: { name: true, avatar: true },
+        });
+
+        if (!completingUser) {
+          return res.status(404).json({ message: 'Utilisateur introuvable.' });
+        }
+
+        // Créer un événement dans le calendrier
+        const startDate = new Date();
+        const endDate = new Date(startDate.getTime() + 60000); // Durée de 1 minute
+        const eventData = {
+          title: `Tâche complétée : ${task.title} par ${completingUser.name}`,
+          description: `La tâche "${task.title}" a été complétée par ${completingUser.name}.`,
+          startDate,
+          endDate,
+          recurrence: 'none',
+          foyerId: task.foyerId,
+          creatorId: userId,
+          completedById: userId, // Lien avec l'utilisateur qui a complété
+        };
+
+        await prisma.calendarEvent.create({
+          data: eventData,
+        });
+
+        // Notification aux membres du foyer
         const pushTokens = await getFoyerMembersPushTokens(task.foyerId);
         for (const token of pushTokens) {
           await sendPushNotification(
             token,
-            `La tâche "${task.title}" a été marquée comme complétée.`
+            `La tâche "${task.title}" a été complétée par ${completingUser.name}.`
           );
         }
       }
@@ -222,7 +248,6 @@ export async function deleteTaskController(
   try {
     const taskId = req.params.taskId;
 
-    // On récupère la tâche pour connaître son foyerId
     const task = await prisma.task.findUnique({
       where: { id: taskId },
       select: { title: true, foyerId: true },
@@ -233,10 +258,8 @@ export async function deleteTaskController(
         .json({ message: 'Tâche introuvable ou déjà supprimée.' });
     }
 
-    // Suppression de la tâche via le service
     const deletedTask = await deleteTask(taskId);
 
-    // Notification aux membres du foyer
     const pushTokens = await getFoyerMembersPushTokens(task.foyerId);
     for (const token of pushTokens) {
       await sendPushNotification(token, `La tâche "${task.title}" a été supprimée.`);
