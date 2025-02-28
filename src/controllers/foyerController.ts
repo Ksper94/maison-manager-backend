@@ -1,6 +1,6 @@
 import { Request, Response, NextFunction } from 'express';
 import { getUserProfile, getUserFoyers } from '../services/userService';
-import { createFoyer, joinFoyer } from '../services/foyerService';
+import { createFoyer, joinFoyer, updateFoyerRules } from '../services/foyerService';
 
 /**
  * Controller pour récupérer le profil de l'utilisateur connecté.
@@ -100,6 +100,35 @@ export const joinFoyerController = async (req: Request, res: Response, next: Nex
     });
   } catch (error) {
     console.error('[joinFoyerController] Erreur :', error);
+    next(error);
+  }
+};
+
+/**
+ * Controller pour mettre à jour les règles d'un foyer
+ */
+export const updateFoyerRulesController = async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const { userId } = req as any;
+    const { foyerId } = req.params; // Récupère l'ID du foyer depuis les paramètres de la route
+    const { rules } = req.body;    // Récupère les nouvelles règles depuis le corps de la requête
+
+    if (!userId) {
+      return res.status(401).json({ message: 'Authentification requise' });
+    }
+
+    if (!foyerId || !rules) {
+      return res.status(400).json({ message: 'L\'ID du foyer et les règles sont requis' });
+    }
+
+    const updatedUser = await updateFoyerRules(foyerId, rules);
+
+    return res.status(200).json({
+      message: 'Règles mises à jour avec succès',
+      user: updatedUser,
+    });
+  } catch (error) {
+    console.error('[updateFoyerRulesController] Erreur :', error);
     next(error);
   }
 };

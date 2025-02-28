@@ -5,6 +5,7 @@ import {
   joinFoyerController,
   getUserProfileController,
   getUserFoyersController,
+  updateFoyerRulesController, // <-- Assurez-vous de l'importer
 } from '../controllers/foyerController';
 
 const router = Router();
@@ -20,5 +21,11 @@ router.get('/me', authMiddleware, getUserProfileController);
 
 // GET /api/foyer/user-foyers (liste des foyers)
 router.get('/user-foyers', authMiddleware, getUserFoyersController);
+
+/**
+ * PUT /api/foyer/:foyerId/rules
+ * Pour mettre à jour les règles du foyer identifié par :foyerId
+ */
+router.put('/:foyerId/rules', authMiddleware, updateFoyerRulesController);
 
 export default router;

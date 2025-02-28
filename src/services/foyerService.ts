@@ -18,13 +18,13 @@ type UserWithFoyers = User & {
  *
  * @param userId - ID de l'utilisateur (celui qui crée le foyer)
  * @param name - Nom du foyer
- * @param rule - Règle du foyer
+ * @param rule - Règle du foyer (chaîne ou objet JSON selon votre modèle Prisma)
  * @returns L'utilisateur mis à jour (avec ses foyers et chaque foyer inclus)
  */
 export async function createFoyer(
   userId: string,
   name: string,
-  rule: string
+  rule: string // ou Record<string, string[]> si vous utilisez un objet JSON
 ): Promise<UserWithFoyers> {
   try {
     // Vérifier que l'utilisateur existe
@@ -44,7 +44,7 @@ export async function createFoyer(
       data: {
         name,
         code,
-        rule,
+        rule, // Compatible avec une string ou un JSON selon votre schéma Prisma
       },
     });
 
@@ -169,6 +169,60 @@ export async function joinFoyer(
     return updatedUser;
   } catch (error) {
     console.error('[joinFoyer] Erreur :', error);
+    throw error;
+  }
+}
+
+/**
+ * Met à jour les règles d'un foyer spécifique.
+ *
+ * @param foyerId - ID du foyer à mettre à jour
+ * @param rules - Nouvelles règles à appliquer au foyer (chaîne ou objet JSON)
+ * @returns L'utilisateur mis à jour avec ses foyers
+ */
+export async function updateFoyerRules(
+  foyerId: string,
+  rules: string // ou Record<string, string[]> si vous utilisez un objet JSON
+): Promise<UserWithFoyers> {
+  try {
+    // Vérifier que le foyer existe
+    const foyer = await prisma.foyer.findUnique({
+      where: { id: foyerId },
+    });
+
+    if (!foyer) {
+      throw new Error('Foyer introuvable.');
+    }
+
+    // Mettre à jour les règles du foyer
+    await prisma.foyer.update({
+      where: { id: foyerId },
+      data: { rule: rules },
+    });
+
+    // Récupérer le premier utilisateur associé au foyer
+    const updatedUser = await prisma.user.findFirst({
+      where: {
+        foyers: {
+          some: { foyerId },
+        },
+      },
+      include: {
+        foyers: {
+          include: {
+            foyer: true,
+          },
+        },
+      },
+    });
+
+    if (!updatedUser) {
+      throw new Error('Aucun utilisateur associé à ce foyer.');
+    }
+
+    return updatedUser;
+  } catch (error) {
+    console.error('[updateFoyerRules] Erreur :', error);
     throw error;
   }
 }
