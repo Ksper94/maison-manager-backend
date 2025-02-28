@@ -29,7 +29,9 @@ async function verifyUserFoyer(userId: string): Promise<string | null> {
 }
 
 /**
+ * POST /api/calendar
  * Crée un nouvel événement dans le foyer du user (le premier foyer trouvé).
+ * Supporte l'option `completedById` si besoin (ex: événement « courses terminées »).
  */
 export async function createEventController(
   req: CustomRequest,
@@ -51,8 +53,17 @@ export async function createEventController(
       });
     }
 
-    const { title, description, startDate, endDate, recurrence } = req.body;
+    // On récupère les champs depuis le body, y compris completedById
+    const {
+      title,
+      description,
+      startDate,
+      endDate,
+      recurrence,
+      completedById, // <-- Nouveau champ optionnel
+    } = req.body;
 
+    // Vérifications minimales
     if (!title || !startDate || !endDate || !recurrence) {
       return res.status(400).json({
         message:
@@ -60,7 +71,7 @@ export async function createEventController(
       });
     }
 
-    // Création de l'événement via ton service
+    // Création de l'événement via le service
     const event = await createCalendarEvent({
       title,
       description,
@@ -69,6 +80,7 @@ export async function createEventController(
       recurrence,
       foyerId,
       creatorId: userId,
+      completedById, // <-- on le transmet au service
     });
 
     // Récupération de tous les userFoyer liés à ce foyer
@@ -102,7 +114,9 @@ export async function createEventController(
 }
 
 /**
+ * GET /api/calendar
  * Récupère tous les événements du foyer du user (le premier foyer trouvé).
+ * Prend en compte les paramètres de query `from` et `to` (optionnels) pour filtrer par date.
  */
 export async function getEventsController(
   req: CustomRequest,
@@ -126,8 +140,9 @@ export async function getEventsController(
     const from = req.query.from ? new Date(String(req.query.from)) : undefined;
     const to = req.query.to ? new Date(String(req.query.to)) : undefined;
 
-    // Récupération des events via ton service
+    // Récupération des events via votre service
     const events = await getCalendarEvents(foyerId, from, to);
+
     return res.status(200).json(events);
   } catch (error) {
     console.error('[getEventsController] Erreur :', error);
@@ -136,6 +151,7 @@ export async function getEventsController(
 }
 
 /**
+ * GET /api/calendar/:eventId
  * Récupère un événement par son ID (pas besoin de foyerId ici).
  */
 export async function getEventByIdController(
@@ -159,7 +175,9 @@ export async function getEventByIdController(
 }
 
 /**
- * Met à jour un événement.
+ * PATCH /api/calendar/:eventId
+ * Met à jour un événement existant.
+ * Peut aussi gérer la mise à jour du completedById si vous l'ajoutez dans le body.
  */
 export async function updateEventController(
   req: Request,
@@ -189,6 +207,7 @@ export async function updateEventController(
 }
 
 /**
+ * DELETE /api/calendar/:eventId
  * Supprime un événement.
  */
 export async function deleteEventController(

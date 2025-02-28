@@ -12,6 +12,11 @@ interface CreateEventInput {
   recurrence: 'none' | 'daily' | 'weekly' | 'monthly' | 'yearly';
   foyerId: string;
   creatorId?: string;
+  /**
+   * Ajout d’un champ optionnel pour indiquer
+   * qui a complété cet événement (ex: “courses terminées”).
+   */
+  completedById?: string;
 }
 
 interface UpdateEventInput {
@@ -56,7 +61,16 @@ interface CreatePlanningInput {
  * Crée un nouvel événement (non-récurrent ou récurrent).
  */
 export async function createCalendarEvent(data: CreateEventInput) {
-  const { title, description, startDate, endDate, recurrence, foyerId, creatorId } = data;
+  const {
+    title,
+    description,
+    startDate,
+    endDate,
+    recurrence,
+    foyerId,
+    creatorId,
+    completedById, // <-- On récupère le champ optionnel
+  } = data;
 
   // Validation basique
   if (recurrence !== 'none' && startDate > endDate) {
@@ -69,6 +83,7 @@ export async function createCalendarEvent(data: CreateEventInput) {
     );
   }
 
+  // On crée l'événement en stockant completedById si fourni
   return prisma.calendarEvent.create({
     data: {
       title,
@@ -78,6 +93,7 @@ export async function createCalendarEvent(data: CreateEventInput) {
       recurrence,
       foyerId,
       creatorId,
+      completedById, // <-- Stocké dans la DB s’il est présent
     },
   });
 }
@@ -308,7 +324,7 @@ export async function deleteCalendarEvent(eventId: string) {
 
 /**
  * Génére les occurrences pour un event récurrent
- * en recopiants les infos completedByName / completedByAvatar
+ * en recopiant les infos completedByName / completedByAvatar
  */
 function generateRecurringEventsWithUser(event: any, from?: Date, to?: Date) {
   const recurringEvents = [];
